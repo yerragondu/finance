@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Account {
+  id         String   @id @default(cuid())
+  name       String
+  type       String   // BANK | CREDIT_CARD | CASH | DEBT | LOAN
+  currency   String   // USD | INR
+  department String   // HOME | MINISTRY | OFFICE | SELF
+  balance     Float    @default(0)
+  creditLimit Float?
+  color       String   @default("#6366f1")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  outgoingTransactions Transaction[] @relation("FromAccount")
+  incomingTransactions Transaction[] @relation("ToAccount")
+}
+
+model Transaction {
+  id              String   @id @default(cuid())
+  type            String   // EXPENSE | INCOME | TRANSFER
+  amount          Float
+  fee             Float    @default(0)
+  exchangeRate    Float?
+  category        String
+  note            String   @default("")
+  date            DateTime @default(now())
+  department      String   // HOME | MINISTRY | OFFICE | SELF
+  paybackExpected Boolean  @default(false)
+  paidBack        Boolean  @default(false)
+  givenBy         String   @default("")
+
+  fromAccountId String?
+  toAccountId   String?
+  fromAccount   Account? @relation("FromAccount", fields: [fromAccountId], references: [id])
+  toAccount     Account? @relation("ToAccount", fields: [toAccountId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  value     String   @unique  // e.g. "HOME"
+  label     String            // e.g. "Home"
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Owing {
+  id         String   @id @default(cuid())
+  personName String
+  amount     Float
+  currency   String   @default("USD")
+  department String   @default("SELF")
+  note       String   @default("")
+  date       DateTime @default(now())
+  status     String   @default("PENDING") // PENDING | RETURNED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
