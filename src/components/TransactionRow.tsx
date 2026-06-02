@@ -11,18 +11,24 @@ import { formatCurrency } from "@/lib/constants";
 import { format } from "date-fns";
 import {
   ArrowUpRight, ArrowDownLeft, ArrowLeftRight,
-  Pencil, Check, X, Trash2, RotateCcw, UserCircle2,
+  Pencil, Check, X, Trash2, RotateCcw, UserCircle2, Users,
 } from "lucide-react";
 
 type Account = { id: string; name: string; currency: string };
 type Category = { id: string; name: string };
+type SplitEntry = {
+  id: string; personName: string; amount: number; currency: string;
+  paidBack: boolean; paybackAccount?: { id: string; name: string; currency: string } | null;
+  note: string;
+};
 
 type Transaction = {
   id: string; type: string; amount: number; fee: number;
   exchangeRate?: number | null; category: string; note: string; givenBy?: string;
-  date: string; department: string; paybackExpected: boolean; paidBack: boolean;
+  date: string; department: string; paybackExpected: boolean; paidBack: boolean; isSplit?: boolean;
   fromAccount?: { id: string; name: string; currency: string } | null;
   toAccount?: { id: string; name: string; currency: string } | null;
+  splits?: SplitEntry[];
 };
 
 type Dept = { value: string; label: string };
@@ -48,7 +54,11 @@ export function TransactionRow({ txn, onUpdated, accounts = [], categories = [],
   const [paybackAmount, setPaybackAmount] = useState(String(txn.amount + txn.fee));
   const [paybackSaving, setPaybackSaving] = useState(false);
 
+  const [splitsOpen, setSplitsOpen] = useState(false);
+
   const currency = txn.fromAccount?.currency ?? txn.toAccount?.currency ?? "USD";
+  const pendingSplits = (txn.splits ?? []).filter((s) => !s.paidBack);
+  const paidSplits = (txn.splits ?? []).filter((s) => s.paidBack);
 
   async function saveEdits() {
     setSaving(true);
@@ -83,8 +93,14 @@ export function TransactionRow({ txn, onUpdated, accounts = [], categories = [],
         paybackAmount: Number(paybackAmount),
       }),
     });
-    setPaybackSaving(false);
-    setPaybackOpen(false);
+    setPaybackSaving(false); setPaybackOpen(false); onUpdated();
+  }
+
+  async function markSplitPaidBack(splitId: string, paybackAccountId?: string) {
+    await fetch(`/api/split-entries/${splitId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paidBack: true, ...(paybackAccountId ? { paybackAccountId } : {}) }),
+    });
     onUpdated();
   }
 
@@ -119,6 +135,15 @@ export function TransactionRow({ txn, onUpdated, accounts = [], categories = [],
                   PAID BACK
                 </span>
               )}
+              {txn.isSplit && (
+                <button
+                  onClick={() => setSplitsOpen((v) => !v)}
+                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200 hover:bg-violet-200 transition-colors flex items-center gap-0.5"
+                >
+                  <Users className="h-2.5 w-2.5" />
+                  SPLIT {pendingSplits.length > 0 ? `· ${pendingSplits.length} pending` : "✓"}
+                </button>
+              )}
             </div>
             <p className="text-[11px] text-[#9B9088] mt-0.5 flex items-center gap-1 flex-wrap">
               <span>{format(new Date(txn.date), "MMM d, yyyy")}</span>
@@ -150,6 +175,35 @@ export function TransactionRow({ txn, onUpdated, accounts = [], categories = [],
                 10% → {formatCurrency(txn.amount * 0.1, currency)}
               </span>
             </div>
+          </div>
+        )}
+
+        {/* ── Split entries ── */}
+        {txn.isSplit && splitsOpen && (txn.splits ?? []).length > 0 && (
+          <div className="mt-2 p-3 rounded-xl bg-violet-50 border border-violet-200 space-y-1.5">
+            <p className="text-[11px] font-semibold text-violet-700 mb-1">Split Participants</p>
+            {(txn.splits ?? []).map((s) => (
+              <div key={s.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${s.paidBack ? "opacity-50" : "bg-white border border-violet-100"}`}>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-medium ${s.paidBack ? "line-through text-[#9B9088]" : "text-[#1A1815]"}`}>{s.personName}</p>
+                  {s.paybackAccount && (
+                    <p className="text-[10px] text-[#9B9088]">→ {s.paybackAccount.name}</p>
+                  )}
+                </div>
+                <p className={`text-xs font-bold shrink-0 ${s.paidBack ? "text-emerald-600 line-through" : "text-violet-700"}`}>
+                  {formatCurrency(s.amount, s.currency)}
+                </p>
+                {!s.paidBack && (
+                  <Button size="icon-sm" variant="ghost"
+                    className="h-5 w-5 text-emerald-600 hover:text-emerald-700 shrink-0"
+                    onClick={() => markSplitPaidBack(s.id, s.paybackAccount?.id)}
+                    title="Mark paid back">
+                    <Check className="h-2.5 w-2.5" />
+                  </Button>
+                )}
+                {s.paidBack && <Check className="h-3 w-3 text-emerald-500 shrink-0" />}
+              </div>
+            ))}
           </div>
         )}
 

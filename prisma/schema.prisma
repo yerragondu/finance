@@ -8,19 +8,23 @@ datasource db {
 }
 
 model Account {
-  id         String   @id @default(cuid())
-  name       String
-  type       String   // BANK | CREDIT_CARD | CASH | DEBT | LOAN
-  currency   String   // USD | INR
-  department String   // HOME | MINISTRY | OFFICE | SELF
+  id          String   @id @default(cuid())
+  name        String
+  type        String   // BANK | CREDIT_CARD | CASH | DEBT | LOAN
+  currency    String   // USD | INR
+  department  String   // HOME | MINISTRY | OFFICE | SELF
   balance     Float    @default(0)
   creditLimit Float?
   color       String   @default("#6366f1")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  outgoingTransactions Transaction[] @relation("FromAccount")
-  incomingTransactions Transaction[] @relation("ToAccount")
+  outgoingTransactions Transaction[]   @relation("FromAccount")
+  incomingTransactions Transaction[]   @relation("ToAccount")
+  splitPaybacks        SplitEntry[]    @relation("SplitPayback")
+  handLoans            HandLoan[]      @relation("HandLoanAccount")
+  recurringBills       RecurringBill[] @relation("RecurringBillAccount")
+  expectedIncomes      ExpectedIncome[] @relation("ExpectedIncomeAccount")
 }
 
 model Transaction {
@@ -32,17 +36,34 @@ model Transaction {
   category        String
   note            String   @default("")
   date            DateTime @default(now())
-  department      String   // HOME | MINISTRY | OFFICE | SELF
+  department      String
   paybackExpected Boolean  @default(false)
   paidBack        Boolean  @default(false)
   givenBy         String   @default("")
+  isSplit         Boolean  @default(false)
 
   fromAccountId String?
   toAccountId   String?
   fromAccount   Account? @relation("FromAccount", fields: [fromAccountId], references: [id])
   toAccount     Account? @relation("ToAccount", fields: [toAccountId], references: [id])
+  splits        SplitEntry[]
 
   createdAt DateTime @default(now())
+}
+
+model SplitEntry {
+  id               String   @id @default(cuid())
+  transactionId    String
+  transaction      Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  personName       String
+  amount           Float
+  currency         String   @default("USD")
+  paybackAccountId String?
+  paybackAccount   Account? @relation("SplitPayback", fields: [paybackAccountId], references: [id])
+  paidBack         Boolean  @default(false)
+  paidBackAt       DateTime?
+  note             String   @default("")
+  createdAt        DateTime @default(now())
 }
 
 model Category {
@@ -71,4 +92,52 @@ model Owing {
   status     String   @default("PENDING") // PENDING | RETURNED
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+model HandLoan {
+  id         String   @id @default(cuid())
+  personName String
+  amount     Float
+  currency   String   @default("USD")
+  department String   @default("SELF")
+  accountId  String?
+  account    Account? @relation("HandLoanAccount", fields: [accountId], references: [id])
+  dueDate    DateTime?
+  note       String   @default("")
+  status     String   @default("PENDING")  // PENDING | RETURNED
+  type       String   @default("BORROWED") // BORROWED | LENT
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model RecurringBill {
+  id         String   @id @default(cuid())
+  name       String
+  amount     Float
+  currency   String   @default("USD")
+  department String   @default("SELF")
+  category   String   @default("Bills & Utilities")
+  accountId  String?
+  account    Account? @relation("RecurringBillAccount", fields: [accountId], references: [id])
+  dayOfMonth Int      @default(1)
+  isActive   Boolean  @default(true)
+  note       String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model ExpectedIncome {
+  id           String   @id @default(cuid())
+  name         String
+  amount       Float
+  currency     String   @default("USD")
+  department   String   @default("SELF")
+  category     String   @default("Salary")
+  accountId    String?
+  account      Account? @relation("ExpectedIncomeAccount", fields: [accountId], references: [id])
+  expectedDate DateTime
+  isReceived   Boolean  @default(false)
+  note         String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

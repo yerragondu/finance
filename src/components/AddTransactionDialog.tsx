@@ -11,12 +11,14 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { TRANSACTION_TYPES, formatCurrency } from "@/lib/constants";
-import { Plus, Tag, UserCircle2 } from "lucide-react";
+import { TRANSACTION_TYPES, CURRENCIES, formatCurrency } from "@/lib/constants";
+import { Plus, Tag, UserCircle2, Users, Trash2 } from "lucide-react";
 
 type Account = { id: string; name: string; currency: string; balance: number; department: string };
 type Category = { id: string; name: string };
 type Dept = { value: string; label: string };
+type SplitPerson = { personName: string; amount: string; paybackAccountId: string };
+
 type Props = {
   accounts: Account[];
   onCreated: () => void;
@@ -33,6 +35,7 @@ const EMPTY = (defaultAccountId = "", defaultDepartment = "SELF") => ({
   fromAccountId: defaultAccountId,
   toAccountId: "",
   paybackExpected: false,
+  isSplit: false,
 });
 
 export function AddTransactionDialog({ accounts, onCreated, departments = [], defaultAccountId, defaultDepartment = "SELF" }: Props) {
@@ -43,10 +46,13 @@ export function AddTransactionDialog({ accounts, onCreated, departments = [], de
   const [newCatName, setNewCatName] = useState("");
   const [addingCat, setAddingCat] = useState(false);
   const [savingCat, setSavingCat] = useState(false);
+  const [splits, setSplits] = useState<SplitPerson[]>([]);
 
-  // Update default dept when active filter changes (dialog closed)
   useEffect(() => {
-    if (!open) setForm(EMPTY(defaultAccountId, defaultDepartment));
+    if (!open) {
+      setForm(EMPTY(defaultAccountId, defaultDepartment));
+      setSplits([]);
+    }
   }, [defaultDepartment, defaultAccountId, open]);
 
   useEffect(() => {
@@ -67,18 +73,28 @@ export function AddTransactionDialog({ accounts, onCreated, departments = [], de
     if (!newCatName.trim()) return;
     setSavingCat(true);
     const res = await fetch("/api/categories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newCatName.trim() }),
     });
     if (res.ok) {
       const cat = await res.json();
       setCategories((prev) => [...prev, cat].sort((a, b) => a.name.localeCompare(b.name)));
       setForm((f) => ({ ...f, category: cat.name }));
-      setNewCatName("");
-      setAddingCat(false);
+      setNewCatName(""); setAddingCat(false);
     }
     setSavingCat(false);
+  }
+
+  function addSplitPerson() {
+    setSplits((prev) => [...prev, { personName: "", amount: "", paybackAccountId: "" }]);
+  }
+
+  function removeSplitPerson(idx: number) {
+    setSplits((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateSplit(idx: number, field: keyof SplitPerson, value: string) {
+    setSplits((prev) => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s));
   }
 
   const isTransfer = form.type === "TRANSFER";
@@ -88,9 +104,13 @@ export function AddTransactionDialog({ accounts, onCreated, departments = [], de
   const toAccount = accounts.find((a) => a.id === form.toAccountId);
   const isCrossCurrency = isTransfer && fromAccount && toAccount && fromAccount.currency !== toAccount.currency;
 
+  const splitTotal = splits.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const myShare = form.amount ? Number(form.amount) - splitTotal : 0;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    const validSplits = splits.filter((s) => s.personName.trim() && Number(s.amount) > 0);
     await fetch("/api/transactions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -101,11 +121,18 @@ export function AddTransactionDialog({ accounts, onCreated, departments = [], de
         exchangeRate: form.exchangeRate ? Number(form.exchangeRate) : undefined,
         fromAccountId: (isExpense || isTransfer) ? form.fromAccountId || null : null,
         toAccountId: (isIncome || isTransfer) ? form.toAccountId || null : null,
+        isSplit: form.isSplit && validSplits.length > 0,
+        splits: validSplits.map((s) => ({
+          personName: s.personName,
+          amount: Number(s.amount),
+          paybackAccountId: s.paybackAccountId || null,
+        })),
       }),
     });
     setLoading(false);
     setOpen(false);
     setForm(EMPTY(defaultAccountId, defaultDepartment));
+    setSplits([]);
     onCreated();
   }
 
@@ -134,7 +161,7 @@ export function AddTransactionDialog({ accounts, onCreated, departments = [], de
                       : "bg-blue-500 text-white shadow"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
-                onClick={() => setForm({ ...form, type: t.value })}
+                onClick={() => { setForm({ ...form, type: t.value, isSplit: false }); setSplits([]); }}
               >{t.label}</button>
             ))}
           </div>
@@ -158,9 +185,7 @@ export function AddTransactionDialog({ accounts, onCreated, departments = [], de
               <Select value={form.fromAccountId}
                 onValueChange={(v) => v !== null && setForm({ ...form, fromAccountId: v })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select account">
-                    {selectedFromLabel ?? "Select account"}
-                  </SelectValue>
+                  <SelectValue placeholder="Select account">{selectedFromLabel ?? "Select account"}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {accounts.map((a) => (
@@ -179,9 +204,7 @@ export function AddTransactionDialog({ accounts, onCreated, departments = [], de
               <Select value={form.toAccountId}
                 onValueChange={(v) => v !== null && setForm({ ...form, toAccountId: v })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select account">
-                    {selectedToLabel ?? "Select account"}
-                  </SelectValue>
+                  <SelectValue placeholder="Select account">{selectedToLabel ?? "Select account"}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {accounts.map((a) => (
@@ -274,6 +297,7 @@ export function AddTransactionDialog({ accounts, onCreated, departments = [], de
             <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
           </div>
 
+          {/* Payback toggle — expense only */}
           {isExpense && (
             <button
               type="button"
@@ -296,6 +320,105 @@ export function AddTransactionDialog({ accounts, onCreated, departments = [], de
                 {form.paybackExpected && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
               </div>
             </button>
+          )}
+
+          {/* Split toggle — expense only */}
+          {isExpense && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !form.isSplit;
+                  setForm({ ...form, isSplit: next });
+                  if (next && splits.length === 0) addSplitPerson();
+                  if (!next) setSplits([]);
+                }}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
+                  form.isSplit
+                    ? "border-violet-400 bg-violet-50 text-violet-700"
+                    : "border-border bg-muted/30 text-muted-foreground hover:border-violet-300/50"
+                }`}
+              >
+                <div className="text-left">
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    {form.isSplit ? "Split Expense ✓" : "Split this expense?"}
+                  </p>
+                  <p className="text-xs opacity-70">Others will pay back their share</p>
+                </div>
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  form.isSplit ? "border-violet-500 bg-violet-500" : "border-current"
+                }`}>
+                  {form.isSplit && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
+                </div>
+              </button>
+
+              {form.isSplit && (
+                <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-violet-700">Split Participants</p>
+                    <Button type="button" size="sm" variant="ghost"
+                      className="h-6 text-xs text-violet-600 hover:text-violet-800"
+                      onClick={addSplitPerson}>
+                      <Plus className="h-3 w-3 mr-0.5" /> Add person
+                    </Button>
+                  </div>
+
+                  {splits.map((s, idx) => (
+                    <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
+                      <div className="space-y-0.5">
+                        {idx === 0 && <p className="text-[10px] text-violet-600">Name</p>}
+                        <Input
+                          placeholder="Person"
+                          value={s.personName}
+                          onChange={(e) => updateSplit(idx, "personName", e.target.value)}
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-0.5">
+                        {idx === 0 && <p className="text-[10px] text-violet-600">Their share</p>}
+                        <Input
+                          type="number" step="0.01" min="0" placeholder="0.00"
+                          value={s.amount}
+                          onChange={(e) => updateSplit(idx, "amount", e.target.value)}
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-0.5">
+                        {idx === 0 && <p className="text-[10px] text-violet-600">Payback account</p>}
+                        <Select value={s.paybackAccountId} onValueChange={(v) => updateSplit(idx, "paybackAccountId", v ?? "")}>
+                          <SelectTrigger className="h-7 text-xs">
+                            <SelectValue placeholder="Optional">
+                              {accounts.find((a) => a.id === s.paybackAccountId)?.name ?? "None"}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {accounts.map((a) => (
+                              <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button type="button" size="icon-sm" variant="ghost"
+                        className="h-7 w-7 text-[#9B9088] hover:text-red-500"
+                        onClick={() => removeSplitPerson(idx)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+
+                  {form.amount && splits.some((s) => Number(s.amount) > 0) && (
+                    <div className="flex items-center justify-between pt-1 border-t border-violet-200">
+                      <p className="text-[11px] text-violet-600">Others pay: {formatCurrency(splitTotal, fromAccount?.currency ?? "USD")}</p>
+                      <p className="text-[11px] text-violet-700 font-semibold">
+                        Your share: {formatCurrency(Math.max(0, myShare), fromAccount?.currency ?? "USD")}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           <div className="space-y-1">

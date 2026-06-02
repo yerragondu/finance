@@ -11,14 +11,13 @@ export async function GET(request: NextRequest) {
     where: {
       ...(department && department !== "ALL" ? { department } : {}),
       ...(accountId
-        ? {
-            OR: [{ fromAccountId: accountId }, { toAccountId: accountId }],
-          }
+        ? { OR: [{ fromAccountId: accountId }, { toAccountId: accountId }] }
         : {}),
     },
     include: {
       fromAccount: true,
       toAccount: true,
+      splits: { include: { paybackAccount: true } },
     },
     orderBy: { date: "desc" },
     take: limit,
@@ -42,6 +41,8 @@ export async function POST(request: NextRequest) {
     toAccountId,
     paybackExpected = false,
     givenBy = "",
+    isSplit = false,
+    splits = [],
   } = body;
 
   const parsedAmount = Number(amount);
@@ -61,9 +62,26 @@ export async function POST(request: NextRequest) {
       ...(toAccountId   ? { toAccount:   { connect: { id: toAccountId   } } } : {}),
       paybackExpected: Boolean(paybackExpected),
       givenBy: String(givenBy ?? ""),
+      isSplit: Boolean(isSplit),
     },
     include: { fromAccount: true, toAccount: true },
   });
+
+  // Create split entries
+  if (isSplit && splits.length > 0) {
+    for (const s of splits) {
+      await prisma.splitEntry.create({
+        data: {
+          transactionId: txn.id,
+          personName: s.personName,
+          amount: Number(s.amount),
+          currency: s.currency ?? (txn.fromAccount?.currency ?? "USD"),
+          paybackAccountId: s.paybackAccountId ?? null,
+          note: s.note ?? "",
+        },
+      });
+    }
+  }
 
   // Update account balances
   if (type === "EXPENSE" && fromAccountId) {
@@ -98,5 +116,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return Response.json(txn, { status: 201 });
+  const full = await prisma.transaction.findUnique({
+    where: { id: txn.id },
+    include: { fromAccount: true, toAccount: true, splits: { include: { paybackAccount: true } } },
+  });
+  return Response.json(full, { status: 201 });
 }
