@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AccountTypeGroup } from "@/components/AccountTypeGroup";
 import { AddAccountDialog } from "@/components/AddAccountDialog";
 import { AddTransactionDialog } from "@/components/AddTransactionDialog";
+import { AIQuickAdd } from "@/components/AIQuickAdd";
+import { AIInsightsPanel } from "@/components/AIInsightsPanel";
 import { TransactionRow } from "@/components/TransactionRow";
 import { OwingPanel } from "@/components/OwingPanel";
 import { HandLoanPanel } from "@/components/HandLoanPanel";
@@ -226,9 +228,16 @@ export default function Dashboard() {
 
         <div className="flex items-center gap-2">
           <a href="/api/export" download
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#EDE8DF] text-[#6B6360] hover:bg-[#F5F1EA] hover:text-[#D97757] transition-colors">
+            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#EDE8DF] text-[#6B6360] hover:bg-[#F5F1EA] hover:text-[#D97757] transition-colors">
             <Download className="h-3.5 w-3.5" /> Export
           </a>
+          <AIQuickAdd
+            accounts={accounts}
+            categories={categories}
+            departments={departments}
+            defaultDepartment={activeDept !== "ALL" ? activeDept : "SELF"}
+            onCreated={fetchData}
+          />
           <AddTransactionDialog
             accounts={accounts}
             departments={departments}
@@ -443,6 +452,18 @@ export default function Dashboard() {
                     <GivenBySummary transactions={allTransactions} />
                   </div>
                 )}
+
+                {/* AI Insights */}
+                <div className={`bg-white rounded-2xl border border-violet-100 shadow-sm p-4 ${activeTab === "loans" || activeTab === "bills" ? "hidden lg:block" : ""}`}>
+                  <AIInsightsPanel
+                    transactions={allTransactions}
+                    accounts={accounts}
+                    owings={owings}
+                    handLoans={handLoans}
+                    recurringBills={recurringBills}
+                    department={activeDept}
+                  />
+                </div>
               </div>
             </div>
           </>
