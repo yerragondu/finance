@@ -1,188 +1,215 @@
 import { prisma } from "@/lib/prisma";
 import ExcelJS from "exceljs";
+import { format } from "date-fns";
+
+// Format amount with currency symbol (no separate currency column)
+function fmtAmt(amount: number, currency: string, type: string): string {
+  const sym = currency === "INR" ? "₹" : "$";
+  const abs =
+    currency === "INR"
+      ? `${sym}${amount.toLocaleString("en-IN")}`
+      : `${sym}${amount.toFixed(2)}`;
+  return type === "EXPENSE" ? `-${abs}` : abs;
+}
+
+function fmtDate(d: Date | string): string {
+  return format(new Date(d), "MMM d, yyyy");
+}
+
+function styleHeader(ws: ExcelJS.Worksheet) {
+  const row = ws.getRow(1);
+  row.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+  row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2D2D6B" } }; // deep indigo
+  row.alignment = { vertical: "middle", horizontal: "center" };
+  row.height = 24;
+}
 
 export async function GET() {
-  const [transactions, departments, handLoans, recurringBills, owings] = await Promise.all([
+  const [transactions, departments, handLoans, owings] = await Promise.all([
     prisma.transaction.findMany({
-      include: { fromAccount: true, toAccount: true, splits: true },
-      orderBy: { date: "desc" },
+      include: { fromAccount: true, toAccount: true },
+      orderBy: { date: "asc" }, // oldest → newest, like the original
     }),
     prisma.department.findMany({ orderBy: { createdAt: "asc" } }),
-    prisma.handLoan.findMany({ include: { account: true }, orderBy: { createdAt: "desc" } }),
-    prisma.recurringBill.findMany({ include: { account: true }, orderBy: { dayOfMonth: "asc" } }),
-    prisma.owing.findMany({ orderBy: { date: "desc" } }),
+    prisma.handLoan.findMany({ include: { account: true }, orderBy: { createdAt: "asc" } }),
+    prisma.owing.findMany({ orderBy: { date: "asc" } }),
   ]);
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "FinanceOS";
   wb.created = new Date();
 
-  // ── Summary sheet ────────────────────────────────────────────
-  const summarySheet = wb.addWorksheet("Summary");
-  summarySheet.columns = [
-    { header: "Department", key: "dept",     width: 15 },
-    { header: "Category",   key: "category", width: 22 },
-    { header: "Type",       key: "type",     width: 12 },
-    { header: "Total (USD)",key: "totalUSD", width: 14 },
-    { header: "Total (INR)",key: "totalINR", width: 14 },
-    { header: "Count",      key: "count",    width: 8  },
-  ];
-  styleHeader(summarySheet);
-
-  const summaryMap: Record<string, Record<string, { usd: number; inr: number; count: number; type: string }>> = {};
-  for (const t of transactions) {
-    const currency = t.fromAccount?.currency ?? t.toAccount?.currency ?? "USD";
-    const key = `${t.department}__${t.category}__${t.type}`;
-    if (!summaryMap[t.department]) summaryMap[t.department] = {};
-    if (!summaryMap[t.department][key]) {
-      summaryMap[t.department][key] = { usd: 0, inr: 0, count: 0, type: t.type };
-    }
-    summaryMap[t.department][key].count += 1;
-    if (currency === "USD") summaryMap[t.department][key].usd += t.amount;
-    else summaryMap[t.department][key].inr += t.amount;
-  }
-
-  for (const dept of departments) {
-    if (!summaryMap[dept.value]) continue;
-    for (const key of Object.keys(summaryMap[dept.value])) {
-      const [, category] = key.split("__");
-      const d = summaryMap[dept.value][key];
-      summarySheet.addRow({
-        dept: dept.label, category, type: d.type,
-        totalUSD: d.usd > 0 ? d.usd : "",
-        totalINR: d.inr > 0 ? d.inr : "",
-        count: d.count,
-      });
-    }
-  }
-
-  // ── One sheet per department ─────────────────────────────────
+  // ── One sheet per department ────────────────────────────────────
   for (const dept of departments) {
     const deptTxns = transactions.filter((t) => t.department === dept.value);
-    const ws = wb.addWorksheet(dept.label);
+    if (deptTxns.length === 0) continue;
 
+    const ws = wb.addWorksheet(dept.label);
+    const isMinistry = dept.value === "MINISTRY";
+
+    // Columns matching the original Excel style
+    const cols: Partial<ExcelJS.Column>[] = [
+      { header: "Date",             key: "date",    width: 14 },
+      { header: "Spent Where",      key: "where",   width: 34 },
+      { header: "For What Purpose", key: "purpose", width: 24 },
+      { header: "How Much",         key: "amount",  width: 16 },
+      { header: "Account",          key: "account", width: 20 },
+      { header: "Payback",          key: "payback", width: 14 },
+    ];
+    if (isMinistry) {
+      cols.push({ header: "Given By", key: "givenBy", width: 16 });
+    }
+    ws.columns = cols;
+    styleHeader(ws);
+
+    // Track totals for summary row
+    const inc: Record<string, number> = {};
+    const exp: Record<string, number> = {};
+
+    for (const t of deptTxns) {
+      const currency =
+        t.fromAccount?.currency ?? t.toAccount?.currency ?? "USD";
+      const account =
+        t.type === "EXPENSE"
+          ? (t.fromAccount?.name ?? t.toAccount?.name ?? "")
+          : (t.toAccount?.name ?? t.fromAccount?.name ?? "");
+
+      const rowData: Record<string, string> = {
+        date:    fmtDate(t.date),
+        where:   t.note || t.category,
+        purpose: t.category,
+        amount:  fmtAmt(t.amount, currency, t.type),
+        account,
+        payback: t.paybackExpected && !t.paidBack ? "⚠ Payback" : "",
+      };
+      if (isMinistry) rowData.givenBy = t.givenBy ?? "";
+
+      const addedRow = ws.addRow(rowData);
+
+      // Row background: green tint = income, red tint = expense, blue tint = transfer
+      const bg =
+        t.type === "EXPENSE" ? "FFFFF0F0" :
+        t.type === "INCOME"  ? "FFF0FFF4" : "FFF0F4FF";
+      addedRow.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+        cell.border = {
+          bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+        };
+      });
+
+      // Amount cell: bold
+      addedRow.getCell("amount").font = { bold: true };
+
+      // Accumulate
+      if (t.type === "INCOME")   inc[currency] = (inc[currency] ?? 0) + t.amount;
+      if (t.type === "EXPENSE")  exp[currency] = (exp[currency] ?? 0) + t.amount;
+    }
+
+    // Blank separator row
+    ws.addRow({});
+
+    // Totals summary row
+    const parts: string[] = [];
+    for (const [cur, val] of Object.entries(inc)) {
+      parts.push(`In: ${cur === "INR" ? "₹" : "$"}${cur === "INR" ? val.toLocaleString("en-IN") : val.toFixed(2)}`);
+    }
+    for (const [cur, val] of Object.entries(exp)) {
+      parts.push(`Out: ${cur === "INR" ? "₹" : "$"}${cur === "INR" ? val.toLocaleString("en-IN") : val.toFixed(2)}`);
+    }
+
+    const totRow = ws.addRow({
+      date:    "TOTALS",
+      where:   "",
+      purpose: "",
+      amount:  parts.join("   |   "),
+    });
+    totRow.font = { bold: true, size: 11 };
+    totRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF3CD" } };
+    totRow.height = 20;
+  }
+
+  // ── Lent to People sheet ────────────────────────────────────────
+  if (owings.length > 0) {
+    const ws = wb.addWorksheet("Lent to People");
     ws.columns = [
-      { header: "Date",             key: "date",    width: 13 },
-      { header: "Type",             key: "type",    width: 10 },
-      { header: "Category",         key: "category",width: 22 },
-      { header: "Amount",           key: "amount",  width: 14 },
-      { header: "Fee",              key: "fee",     width: 10 },
-      { header: "Currency",         key: "currency",width: 10 },
-      { header: "From Account",     key: "from",    width: 18 },
-      { header: "To Account",       key: "to",      width: 18 },
-      { header: "Given By",         key: "givenBy", width: 15 },
-      { header: "Note",             key: "note",    width: 30 },
-      { header: "Payback Expected", key: "payback", width: 18 },
-      { header: "Split",            key: "split",   width: 8  },
+      { header: "Person",     key: "person",   width: 22 },
+      { header: "Amount",     key: "amount",   width: 16 },
+      { header: "Department", key: "dept",     width: 16 },
+      { header: "Date",       key: "date",     width: 14 },
+      { header: "Status",     key: "status",   width: 14 },
+      { header: "Note",       key: "note",     width: 38 },
     ];
     styleHeader(ws);
 
-    for (const t of deptTxns) {
-      const currency = t.fromAccount?.currency ?? t.toAccount?.currency ?? "USD";
-      ws.addRow({
-        date: new Date(t.date).toLocaleDateString("en-US"),
-        type: t.type,
-        category: t.category,
-        amount: t.amount,
-        fee: t.fee || "",
-        currency,
-        from: t.fromAccount?.name ?? "",
-        to: t.toAccount?.name ?? "",
-        givenBy: t.givenBy || "",
-        note: t.note,
-        payback: t.paybackExpected ? "Yes" : "",
-        split: t.isSplit ? "Yes" : "",
+    for (const o of owings) {
+      const row = ws.addRow({
+        person: o.personName,
+        amount:
+          o.currency === "INR"
+            ? `₹${o.amount.toLocaleString("en-IN")}`
+            : `$${o.amount.toFixed(2)}`,
+        dept:   o.department,
+        date:   fmtDate(o.date),
+        status: o.status,
+        note:   o.note,
       });
+      const settled = ["SETTLED", "PAID"].includes(o.status);
+      row.eachCell((cell) => {
+        cell.fill = {
+          type: "pattern", pattern: "solid",
+          fgColor: { argb: settled ? "FFF0FFF4" : "FFFFFBEB" },
+        };
+      });
+      row.getCell("amount").font = { bold: true };
     }
-
-    ws.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return;
-      const type = row.getCell("type").value as string;
-      const fill: ExcelJS.Fill = {
-        type: "pattern", pattern: "solid",
-        fgColor: { argb: type === "EXPENSE" ? "FFFEF2F2" : type === "INCOME" ? "FFECFDF5" : "FFEFF6FF" },
-      };
-      row.eachCell((cell) => { cell.fill = fill; });
-    });
   }
 
-  // ── Hand Loans sheet ─────────────────────────────────────────
-  const loansSheet = wb.addWorksheet("Hand Loans");
-  loansSheet.columns = [
-    { header: "Person",     key: "person",   width: 18 },
-    { header: "Type",       key: "type",     width: 12 },
-    { header: "Amount",     key: "amount",   width: 14 },
-    { header: "Currency",   key: "currency", width: 10 },
-    { header: "Department", key: "dept",     width: 14 },
-    { header: "Account",    key: "account",  width: 18 },
-    { header: "Due Date",   key: "dueDate",  width: 13 },
-    { header: "Status",     key: "status",   width: 12 },
-    { header: "Note",       key: "note",     width: 30 },
-  ];
-  styleHeader(loansSheet);
-  for (const l of handLoans) {
-    loansSheet.addRow({
-      person: l.personName, type: l.type, amount: l.amount, currency: l.currency,
-      dept: l.department, account: l.account?.name ?? "",
-      dueDate: l.dueDate ? new Date(l.dueDate).toLocaleDateString("en-US") : "",
-      status: l.status, note: l.note,
-    });
-  }
+  // ── Borrowed & Hand Loans sheet ─────────────────────────────────
+  if (handLoans.length > 0) {
+    const ws = wb.addWorksheet("Borrowed & Lent");
+    ws.columns = [
+      { header: "Person",     key: "person",   width: 22 },
+      { header: "Type",       key: "type",     width: 12 },
+      { header: "Amount",     key: "amount",   width: 16 },
+      { header: "Department", key: "dept",     width: 16 },
+      { header: "Account",    key: "account",  width: 20 },
+      { header: "Due Date",   key: "dueDate",  width: 14 },
+      { header: "Status",     key: "status",   width: 14 },
+      { header: "Note",       key: "note",     width: 38 },
+    ];
+    styleHeader(ws);
 
-  // ── Recurring Bills sheet ─────────────────────────────────────
-  const billsSheet = wb.addWorksheet("Recurring Bills");
-  billsSheet.columns = [
-    { header: "Name",        key: "name",     width: 22 },
-    { header: "Amount",      key: "amount",   width: 14 },
-    { header: "Currency",    key: "currency", width: 10 },
-    { header: "Department",  key: "dept",     width: 14 },
-    { header: "Category",    key: "category", width: 18 },
-    { header: "Account",     key: "account",  width: 18 },
-    { header: "Day of Month",key: "day",      width: 14 },
-    { header: "Note",        key: "note",     width: 30 },
-  ];
-  styleHeader(billsSheet);
-  for (const b of recurringBills) {
-    billsSheet.addRow({
-      name: b.name, amount: b.amount, currency: b.currency,
-      dept: b.department, category: b.category, account: b.account?.name ?? "",
-      day: b.dayOfMonth, note: b.note,
-    });
-  }
-
-  // ── Owing sheet ───────────────────────────────────────────────
-  const owingSheet = wb.addWorksheet("Money Owed");
-  owingSheet.columns = [
-    { header: "Person",     key: "person",   width: 18 },
-    { header: "Amount",     key: "amount",   width: 14 },
-    { header: "Currency",   key: "currency", width: 10 },
-    { header: "Department", key: "dept",     width: 14 },
-    { header: "Date",       key: "date",     width: 13 },
-    { header: "Status",     key: "status",   width: 12 },
-    { header: "Note",       key: "note",     width: 30 },
-  ];
-  styleHeader(owingSheet);
-  for (const o of owings) {
-    owingSheet.addRow({
-      person: o.personName, amount: o.amount, currency: o.currency,
-      dept: o.department, date: new Date(o.date).toLocaleDateString("en-US"),
-      status: o.status, note: o.note,
-    });
+    for (const l of handLoans) {
+      const row = ws.addRow({
+        person:  l.personName,
+        type:    l.type,
+        amount:
+          l.currency === "INR"
+            ? `₹${l.amount.toLocaleString("en-IN")}`
+            : `$${l.amount.toFixed(2)}`,
+        dept:    l.department,
+        account: l.account?.name ?? "",
+        dueDate: l.dueDate ? fmtDate(l.dueDate) : "",
+        status:  l.status,
+        note:    l.note,
+      });
+      const closed = ["PAID", "SETTLED", "CANCELLED"].includes(l.status);
+      const bg =
+        closed         ? "FFF3F4F6" :
+        l.type === "LENT" ? "FFF0F9FF" : "FFFFFBEB";
+      row.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+      });
+      row.getCell("amount").font = { bold: true };
+    }
   }
 
   const buf = await wb.xlsx.writeBuffer();
   return new Response(buf, {
     headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="financeos-export-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="FinanceOS-${format(new Date(), "yyyy-MM-dd")}.xlsx"`,
     },
   });
-}
-
-function styleHeader(ws: ExcelJS.Worksheet) {
-  const headerRow = ws.getRow(1);
-  headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
-  headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD97757" } };
-  headerRow.alignment = { vertical: "middle", horizontal: "center" };
-  headerRow.height = 22;
 }
