@@ -207,10 +207,12 @@ export default function Dashboard() {
   const totalInINR  = incomeTxns.filter(t  => (t.toAccount?.currency   ?? t.fromAccount?.currency) === "INR").reduce((s,t) => s+t.amount, 0);
   const totalOutUSD = expenseTxns.filter(t => (t.fromAccount?.currency ?? t.toAccount?.currency)   === "USD").reduce((s,t) => s+t.amount, 0);
   const totalOutINR = expenseTxns.filter(t => (t.fromAccount?.currency ?? t.toAccount?.currency)   === "INR").reduce((s,t) => s+t.amount, 0);
-  const pendingPaybackAmt = pendingPaybacks.reduce((s,t) => {
-    const cur = t.fromAccount?.currency ?? t.toAccount?.currency ?? "USD";
-    return s + (cur === "INR" ? t.amount / 84 : t.amount);
-  }, 0);
+  const pendingPaybackUSD = pendingPaybacks
+    .filter(t => (t.fromAccount?.currency ?? t.toAccount?.currency ?? "USD") === "USD")
+    .reduce((s,t) => s + t.amount, 0);
+  const pendingPaybackINR = pendingPaybacks
+    .filter(t => (t.fromAccount?.currency ?? t.toAccount?.currency ?? "USD") === "INR")
+    .reduce((s,t) => s + t.amount, 0);
 
   // Account type grouping
   const accountsByType = ACCOUNT_TYPE_ORDER
@@ -401,8 +403,8 @@ export default function Dashboard() {
             {/* ── Donut Chart — spans rows 1 & 2 ── */}
             <div className="row-span-2 bg-white rounded-2xl border border-sky-100 shadow-md p-4 flex flex-col min-h-0">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Spending Summary</p>
-              {allTransactions.length > 0
-                ? <DonutChart transactions={allTransactions} />
+              {deptTransactions.length > 0
+                ? <DonutChart transactions={deptTransactions} />
                 : <div className="flex-1 flex items-center justify-center text-sm text-slate-300">No transactions yet</div>
               }
             </div>
@@ -433,7 +435,8 @@ export default function Dashboard() {
                     <div className="rounded-xl p-3" style={{ background: "linear-gradient(135deg,#FFF7ED,#FED7AA)" }}>
                       <p className="text-[9px] font-bold text-amber-600 uppercase tracking-widest mb-1">Pending Paybacks</p>
                       <p className="text-[15px] font-extrabold text-amber-700 leading-tight">{pendingPaybacks.length > 0 ? `${pendingPaybacks.length} items` : "—"}</p>
-                      {pendingPaybacks.length > 0 && <p className="text-[9px] text-amber-600 mt-0.5">~{formatCurrency(pendingPaybackAmt,"USD")} equiv.</p>}
+                      {pendingPaybackUSD > 0 && <p className="text-[9px] text-amber-600 mt-0.5">{formatCurrency(pendingPaybackUSD,"USD")}</p>}
+                      {pendingPaybackINR > 0 && <p className="text-[9px] text-amber-600 mt-0.5">{formatCurrency(pendingPaybackINR,"INR")}</p>}
                     </div>
                     <div className="rounded-xl p-3" style={{ background: "linear-gradient(135deg,#EFF6FF,#BFDBFE)" }}>
                       <p className="text-[9px] font-bold text-blue-600 uppercase tracking-widest mb-1">Cross-Dept Txns</p>
@@ -521,23 +524,36 @@ export default function Dashboard() {
                   {/* ── Cross-Department Transactions ── */}
                   {crossDeptTxns.length > 0 && (
                     <div>
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-3">
                         <ArrowLeftRight className="h-3.5 w-3.5 text-blue-500" />
-                        <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Cross-Dept Transactions · {crossDeptTxns.length} (not counted above)</p>
+                        <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">
+                          Cross-Dept · {crossDeptTxns.length} txn{crossDeptTxns.length !== 1 ? "s" : ""}
+                          <span className="ml-1 font-normal normal-case text-[9px] text-blue-400">using this dept's accounts — not counted in your totals</span>
+                        </p>
                       </div>
-                      <div className="rounded-xl border-2 border-blue-200 bg-blue-50/40 divide-y divide-blue-100">
-                        {crossDeptTxns.map(t => (
-                          <div key={t.id}>
-                            <div className="px-3 pt-2 pb-0">
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
-                                <ArrowLeftRight className="h-2.5 w-2.5" /> from {t.department} · not counted in totals
-                              </span>
+                      <div className="space-y-3">
+                        {(() => {
+                          const byDept = new Map<string, Transaction[]>();
+                          for (const t of crossDeptTxns) {
+                            if (!byDept.has(t.department)) byDept.set(t.department, []);
+                            byDept.get(t.department)!.push(t);
+                          }
+                          return Array.from(byDept.entries()).map(([dept, txns]) => (
+                            <div key={dept}>
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                                  <ArrowLeftRight className="h-2.5 w-2.5" /> {dept}
+                                </span>
+                                <span className="text-[9px] text-slate-400">{txns.length} transaction{txns.length !== 1 ? "s" : ""}</span>
+                              </div>
+                              <div className="rounded-xl border border-blue-200 bg-blue-50/30 px-3 divide-y divide-blue-100">
+                                {txns.map(t => (
+                                  <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />
+                                ))}
+                              </div>
                             </div>
-                            <div className="px-3">
-                              <TransactionRow txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />
-                            </div>
-                          </div>
-                        ))}
+                          ));
+                        })()}
                       </div>
                     </div>
                   )}
