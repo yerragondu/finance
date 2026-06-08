@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     }
     if (toAccountId) {
       const received = exchangeRate
-        ? parsedAmount / Number(exchangeRate)
+        ? parsedAmount * Number(exchangeRate)
         : parsedAmount;
       await prisma.account.update({
         where: { id: toAccountId },

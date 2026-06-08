@@ -151,7 +151,9 @@ export default function Dashboard() {
   const debtAccounts = accounts.filter((a) => ["DEBT", "LOAN"].includes(a.type));
   const usdBalance = accounts.filter((a) => liquidTypes.includes(a.type) && a.currency === "USD").reduce((s, a) => s + a.balance, 0);
   const inrBalance = accounts.filter((a) => liquidTypes.includes(a.type) && a.currency === "INR").reduce((s, a) => s + a.balance, 0);
-  const totalDebt = debtAccounts.reduce((s, a) => s + a.balance, 0);
+  const totalDebtUSD = debtAccounts.filter(a => a.currency === "USD").reduce((s, a) => s + a.balance, 0);
+  const totalDebtINR = debtAccounts.filter(a => a.currency === "INR").reduce((s, a) => s + a.balance, 0);
+  const totalDebt = totalDebtUSD + totalDebtINR / 84; // unified scalar for red-flag logic
   const pendingPaybacks = transactions.filter((t) => t.paybackExpected && !t.paidBack);
 
   // Account type grouping
@@ -255,7 +257,12 @@ export default function Dashboard() {
           {[
             { label: "USD Balance", value: formatCurrency(usdBalance, "USD"), icon: DollarSign, color: "#D97757", bg: "#FDF4EE", sub: "Bank & Cash only" },
             { label: "INR Balance", value: formatCurrency(inrBalance, "INR"), icon: IndianRupee, color: "#16A34A", bg: "#F0FDF4", sub: "Bank & Cash only" },
-            { label: "Total Debt", value: formatCurrency(totalDebt, "USD"), icon: TrendingDown, color: "#DC2626", bg: "#FEF2F2", sub: `${debtAccounts.length} loans/debts`, red: true },
+            { label: "Total Debt",
+              value: totalDebtINR > 0 && totalDebtUSD === 0 ? formatCurrency(totalDebtINR, "INR")
+                : totalDebtUSD > 0 && totalDebtINR === 0 ? formatCurrency(totalDebtUSD, "USD")
+                : totalDebtINR > 0 && totalDebtUSD > 0 ? `${formatCurrency(totalDebtINR, "INR")} + ${formatCurrency(totalDebtUSD, "USD")}`
+                : "None",
+              icon: TrendingDown, color: "#DC2626", bg: "#FEF2F2", sub: `${debtAccounts.length} loans/debts`, red: true },
             { label: "Pending Paybacks", value: pendingPaybacks.length > 0 ? `${pendingPaybacks.length} pending` : "All clear", icon: Clock, color: "#D97706", bg: "#FFFBEB", sub: "To be returned" },
           ].map((c) => (
             <div key={c.label} className="rounded-2xl border border-[#EDE8DF] bg-white p-4 shadow-sm overflow-hidden"

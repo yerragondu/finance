@@ -224,7 +224,7 @@ export function AddTransactionDialog({ accounts, onCreated, departments = [], de
                 value={form.exchangeRate} onChange={(e) => setForm({ ...form, exchangeRate: e.target.value })} />
               {form.exchangeRate && form.amount && (
                 <p className="text-xs text-muted-foreground">
-                  Recipient gets ~{formatCurrency(Number(form.amount) / Number(form.exchangeRate), toAccount!.currency)}
+                  Recipient gets ~{formatCurrency(Number(form.amount) * Number(form.exchangeRate), toAccount!.currency)}
                 </p>
               )}
             </div>
