@@ -1,8 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const department = searchParams.get("department");
   const owings = await prisma.owing.findMany({
+    where: department ? { department } : undefined,
     orderBy: [{ status: "asc" }, { date: "desc" }],
   });
   return Response.json(owings);

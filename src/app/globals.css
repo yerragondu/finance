@@ -48,63 +48,56 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ── Claude Theme ── */
+/* ── FinanceOS Indigo Theme ── */
 :root {
-  /* Warm cream background */
-  --background: oklch(0.97 0.012 80);
-  --foreground: oklch(0.17 0.015 60);
+  /* Lavender-tinted background */
+  --background: oklch(0.971 0.008 270);
+  --foreground: oklch(0.12 0.025 270);
 
-  /* White cards */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.17 0.015 60);
+  --card-foreground: oklch(0.12 0.025 270);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.17 0.015 60);
+  --popover-foreground: oklch(0.12 0.025 270);
 
-  /* Claude orange */
-  --primary: oklch(0.62 0.13 42);
+  /* Indigo primary */
+  --primary: oklch(0.52 0.26 264);
   --primary-foreground: oklch(1 0 0);
 
-  /* Warm sand secondary */
-  --secondary: oklch(0.93 0.015 75);
-  --secondary-foreground: oklch(0.40 0.04 50);
-  --muted: oklch(0.94 0.012 75);
-  --muted-foreground: oklch(0.50 0.04 55);
-  --accent: oklch(0.93 0.015 75);
-  --accent-foreground: oklch(0.62 0.13 42);
+  --secondary: oklch(0.93 0.012 265);
+  --secondary-foreground: oklch(0.32 0.03 265);
+  --muted: oklch(0.95 0.008 265);
+  --muted-foreground: oklch(0.48 0.018 265);
+  --accent: oklch(0.93 0.012 265);
+  --accent-foreground: oklch(0.52 0.26 264);
 
-  /* Utility */
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.88 0.018 75);
-  --input: oklch(0.91 0.014 75);
-  --ring: oklch(0.62 0.13 42);
+  --destructive: oklch(0.58 0.24 27);
+  --border: oklch(0.88 0.012 265);
+  --input: oklch(0.92 0.009 265);
+  --ring: oklch(0.52 0.26 264);
 
-  /* Charts */
-  --chart-1: oklch(0.62 0.13 42);
-  --chart-2: oklch(0.55 0.15 155);
-  --chart-3: oklch(0.50 0.18 270);
-  --chart-4: oklch(0.65 0.18 85);
-  --chart-5: oklch(0.60 0.20 340);
+  --chart-1: oklch(0.52 0.26 264);
+  --chart-2: oklch(0.55 0.18 155);
+  --chart-3: oklch(0.62 0.20 42);
+  --chart-4: oklch(0.68 0.19 85);
+  --chart-5: oklch(0.62 0.22 340);
 
-  --radius: 0.75rem;
+  --radius: 0.875rem;
 
-  --sidebar: oklch(0.94 0.015 70);
-  --sidebar-foreground: oklch(0.17 0.015 60);
-  --sidebar-primary: oklch(0.62 0.13 42);
+  --sidebar: oklch(0.11 0.025 270);
+  --sidebar-foreground: oklch(0.88 0.012 265);
+  --sidebar-primary: oklch(0.52 0.26 264);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.89 0.02 70);
-  --sidebar-accent-foreground: oklch(0.62 0.13 42);
-  --sidebar-border: oklch(0.85 0.02 70);
-  --sidebar-ring: oklch(0.62 0.13 42);
+  --sidebar-accent: oklch(0.18 0.028 265);
+  --sidebar-accent-foreground: oklch(0.78 0.02 265);
+  --sidebar-border: oklch(0.20 0.028 265);
+  --sidebar-ring: oklch(0.52 0.26 264);
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-  html {
-    @apply font-sans;
-  }
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground; font-feature-settings: "cv02","cv03","cv04","cv11"; }
+  html { @apply font-sans; }
+  /* Smooth number rendering */
+  .tabular { font-variant-numeric: tabular-nums; }
 }
+

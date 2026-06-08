@@ -4,8 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AccountTypeGroup } from "@/components/AccountTypeGroup";
 import { AddAccountDialog } from "@/components/AddAccountDialog";
 import { AddTransactionDialog } from "@/components/AddTransactionDialog";
-import { AIQuickAdd } from "@/components/AIQuickAdd";
-import { AIInsightsPanel } from "@/components/AIInsightsPanel";
 import { TransactionRow } from "@/components/TransactionRow";
 import { OwingPanel } from "@/components/OwingPanel";
 import { HandLoanPanel } from "@/components/HandLoanPanel";
@@ -15,7 +13,7 @@ import { CategoryBreakdown } from "@/components/CategoryBreakdown";
 import { GivenBySummary } from "@/components/GivenBySummary";
 import { formatCurrency } from "@/lib/constants";
 import { format } from "date-fns";
-import { DollarSign, IndianRupee, TrendingDown, Clock, Download, Plus, Check, X } from "lucide-react";
+import { TrendingDown, Download, Plus, Check, X, Landmark, CreditCard, HandCoins, Users, ArrowUpRight, ArrowDownLeft, ArrowLeftRight } from "lucide-react";
 
 type Account = {
   id: string; name: string; type: string; currency: string;
@@ -72,7 +70,6 @@ function groupByMonth(transactions: Transaction[]): { label: string; txns: Trans
 
 export default function Dashboard() {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [owings, setOwings] = useState<Owing[]>([]);
   const [handLoans, setHandLoans] = useState<HandLoan[]>([]);
@@ -81,7 +78,7 @@ export default function Dashboard() {
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [departments, setDepartments] = useState<Dept[]>([]);
   const [activeDept, setActiveDept] = useState("ALL");
-  const [activeTab, setActiveTab] = useState<"accounts" | "transactions" | "owing" | "loans" | "bills">("accounts");
+  const [selectedCard, setSelectedCard] = useState<"banks" | "creditcards" | "loans" | "borrowed" | "lent">("banks");
   const [loading, setLoading] = useState(true);
 
   const [addingDept, setAddingDept] = useState(false);
@@ -100,11 +97,10 @@ export default function Dashboard() {
     const sep = deptParam ? "&" : "?";
     const loanParam = activeDept !== "ALL" ? `?department=${activeDept}` : "";
 
-    const [accs, txns, allTxns, ows, cats, loans, bills, expected] = await Promise.all([
+    const [accs, allTxns, ows, cats, loans, bills, expected] = await Promise.all([
       fetch(`/api/accounts${deptParam}`).then((r) => r.json()),
-      fetch(`/api/transactions${deptParam}${sep}limit=100`).then((r) => r.json()),
-      fetch(`/api/transactions${deptParam}${sep}limit=10000`).then((r) => r.json()),
-      fetch("/api/owing").then((r) => r.json()),
+      fetch(`/api/transactions?limit=100000`).then((r) => r.json()), // always ALL txns for cross-dept support
+      fetch(`/api/owing${loanParam}`).then((r) => r.json()),
       fetch("/api/categories").then((r) => r.ok ? r.json() : []),
       fetch(`/api/handloans${loanParam}`).then((r) => r.ok ? r.json() : []),
       fetch(`/api/recurring-bills${loanParam}`).then((r) => r.ok ? r.json() : []),
@@ -112,7 +108,6 @@ export default function Dashboard() {
     ]);
 
     setAccounts(Array.isArray(accs) ? accs : []);
-    setTransactions(Array.isArray(txns) ? txns : []);
     setAllTransactions(Array.isArray(allTxns) ? allTxns : []);
     setOwings(Array.isArray(ows) ? ows : []);
     setCategories(Array.isArray(cats) ? cats : []);
@@ -154,7 +149,68 @@ export default function Dashboard() {
   const totalDebtUSD = debtAccounts.filter(a => a.currency === "USD").reduce((s, a) => s + a.balance, 0);
   const totalDebtINR = debtAccounts.filter(a => a.currency === "INR").reduce((s, a) => s + a.balance, 0);
   const totalDebt = totalDebtUSD + totalDebtINR / 84; // unified scalar for red-flag logic
-  const pendingPaybacks = transactions.filter((t) => t.paybackExpected && !t.paidBack);
+  const pendingPaybacks = (activeDept === "ALL" ? allTransactions : allTransactions.filter(t => t.department === activeDept)).filter((t) => t.paybackExpected && !t.paidBack);
+
+  // Per-card calculations
+  const bankCashAccounts = accounts.filter(a => ["BANK","CASH"].includes(a.type));
+  const ccAccounts       = accounts.filter(a => a.type === "CREDIT_CARD");
+  const loanDebtAccts    = accounts.filter(a => ["LOAN","DEBT"].includes(a.type));
+
+  const bankUSD = bankCashAccounts.filter(a => a.currency==="USD").reduce((s,a) => s+a.balance,0);
+  const bankINR = bankCashAccounts.filter(a => a.currency==="INR").reduce((s,a) => s+a.balance,0);
+
+  const ccUsedUSD  = ccAccounts.filter(a => a.currency==="USD").reduce((s,a) => s+a.balance,0);
+  const ccUsedINR  = ccAccounts.filter(a => a.currency==="INR").reduce((s,a) => s+a.balance,0);
+  const ccLimitUSD = ccAccounts.filter(a => a.currency==="USD").reduce((s,a) => s+(a.creditLimit??0),0);
+  const ccLimitINR = ccAccounts.filter(a => a.currency==="INR").reduce((s,a) => s+(a.creditLimit??0),0);
+
+  const activeOwings = owings.filter(o => o.status !== "SETTLED" && o.status !== "PAID");
+
+  // Only BORROWED type counts toward "Borrowed from People"; LENT type rolls into "Lent to People"
+  const CLOSED = ["PAID", "SETTLED", "CANCELLED"];
+  const activeBorrowed = handLoans.filter(hl => hl.type === "BORROWED" && !CLOSED.includes(hl.status));
+  const activeLentHand = handLoans.filter(hl => hl.type === "LENT"     && !CLOSED.includes(hl.status));
+
+  const borrowedUSD = activeBorrowed.filter(hl => hl.currency==="USD").reduce((s,hl) => s+hl.amount, 0);
+  const borrowedINR = activeBorrowed.filter(hl => hl.currency==="INR").reduce((s,hl) => s+hl.amount, 0);
+
+  // Lent = owings + hand-lent (both types)
+  const lentUSD = activeOwings.filter(o => o.currency==="USD").reduce((s,o) => s+o.amount, 0)
+                + activeLentHand.filter(hl => hl.currency==="USD").reduce((s,hl) => s+hl.amount, 0);
+  const lentINR = activeOwings.filter(o => o.currency==="INR").reduce((s,o) => s+o.amount, 0)
+                + activeLentHand.filter(hl => hl.currency==="INR").reduce((s,hl) => s+hl.amount, 0);
+
+  // CC transactions = any txn where from/to account is a CC
+  const ccAccountIds = new Set(ccAccounts.map(a => a.id));
+  const ccTransactions = allTransactions.filter(t =>
+    (t.fromAccount?.id && ccAccountIds.has(t.fromAccount.id)) ||
+    (t.toAccount?.id   && ccAccountIds.has(t.toAccount.id))
+  );
+
+  // Dept-scoped transactions for display (filter from allTransactions client-side)
+  const deptTransactions = activeDept === "ALL"
+    ? allTransactions
+    : allTransactions.filter(t => t.department === activeDept);
+
+  // Cross-dept: txns created in OTHER dept but using THIS dept's accounts
+  const deptAccountIds = new Set(accounts.map(a => a.id));
+  const crossDeptTxns = activeDept === "ALL" ? [] : allTransactions.filter(t =>
+    t.department !== activeDept &&
+    ((t.fromAccount?.id && deptAccountIds.has(t.fromAccount.id)) ||
+     (t.toAccount?.id   && deptAccountIds.has(t.toAccount.id)))
+  );
+
+  // Totals for current dept
+  const incomeTxns  = deptTransactions.filter(t => t.type === "INCOME");
+  const expenseTxns = deptTransactions.filter(t => t.type === "EXPENSE");
+  const totalInUSD  = incomeTxns.filter(t  => (t.toAccount?.currency   ?? t.fromAccount?.currency) === "USD").reduce((s,t) => s+t.amount, 0);
+  const totalInINR  = incomeTxns.filter(t  => (t.toAccount?.currency   ?? t.fromAccount?.currency) === "INR").reduce((s,t) => s+t.amount, 0);
+  const totalOutUSD = expenseTxns.filter(t => (t.fromAccount?.currency ?? t.toAccount?.currency)   === "USD").reduce((s,t) => s+t.amount, 0);
+  const totalOutINR = expenseTxns.filter(t => (t.fromAccount?.currency ?? t.toAccount?.currency)   === "INR").reduce((s,t) => s+t.amount, 0);
+  const pendingPaybackAmt = pendingPaybacks.reduce((s,t) => {
+    const cur = t.fromAccount?.currency ?? t.toAccount?.currency ?? "USD";
+    return s + (cur === "INR" ? t.amount / 84 : t.amount);
+  }, 0);
 
   // Account type grouping
   const accountsByType = ACCOUNT_TYPE_ORDER
@@ -162,7 +218,7 @@ export default function Dashboard() {
     .filter((g) => g.accounts.length > 0);
 
   // Month-wise transaction groups
-  const monthGroups = groupByMonth(transactions);
+  const monthGroups = groupByMonth(allTransactions);
 
   // Upcoming recurring bills (next 7 days)
   const today = new Date();
@@ -174,24 +230,25 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6]">
+    <div className="min-h-screen" style={{ background: "linear-gradient(160deg, #EEEEFF 0%, #F3F4FF 40%, #EFF6FF 100%)" }}>
 
-      {/* ── Header ── */}
-      <header className="bg-white border-b border-[#EDE8DF] px-6 h-14 flex items-center justify-between sticky top-0 z-10 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-        <div className="flex items-center gap-3">
-          <h1 className="text-[15px] font-bold tracking-tight shrink-0" style={{ background: "linear-gradient(135deg, #D97757, #C4613F)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-            FinanceOS
+      {/* ══ HEADER ══ */}
+      <header className="px-6 h-14 flex items-center justify-between sticky top-0 z-10 shadow-lg" style={{ background: "linear-gradient(135deg, #1a1a3e 0%, #12122e 100%)" }}>
+        <div className="flex items-center gap-4">
+          <h1 className="text-[15px] font-bold tracking-tight shrink-0 text-white">
+            Finance<span className="text-[#818CF8]">OS</span>
           </h1>
 
           {/* Dept tabs */}
-          <div className="hidden sm:flex items-center gap-0.5 bg-[#F5F1EA] p-0.5 rounded-lg border border-[#EDE8DF]">
+          <div className="hidden sm:flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: "rgba(255,255,255,0.06)" }}>
             {ALL_DEPTS.map((d) => (
               <button key={d.value} onClick={() => setActiveDept(d.value)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
                   activeDept === d.value
-                    ? "bg-white text-[#D97757] shadow-sm font-semibold border border-[#EDE8DF]"
-                    : "text-[#9B9088] hover:text-[#D97757]"
-                }`}>
+                    ? "text-white shadow-lg"
+                    : "text-[#8B8FB8] hover:text-white"
+                }`}
+                style={activeDept === d.value ? { background: "linear-gradient(135deg, #6366F1, #8B5CF6)" } : {}}>
                 {d.label}
               </button>
             ))}
@@ -207,20 +264,20 @@ export default function Dashboard() {
                     if (e.key === "Enter") { e.preventDefault(); handleAddDept(); }
                     if (e.key === "Escape") { setAddingDept(false); setNewDeptName(""); }
                   }}
-                  className="px-2 py-0.5 text-xs rounded-md border border-[#D97757] w-24 focus:outline-none focus:ring-1 focus:ring-[#D97757] bg-white text-[#1A1815]"
+                  className="px-2 py-0.5 text-xs rounded-md border border-[#6366F1] w-24 focus:outline-none focus:ring-1 focus:ring-[#6366F1] bg-[#0F172A] text-white placeholder:text-[#475569]"
                 />
                 <button onClick={handleAddDept} disabled={savingDept || !newDeptName.trim()}
-                  className="p-0.5 text-[#D97757] hover:text-[#C4613F] disabled:opacity-40">
+                  className="p-0.5 text-[#818CF8] hover:text-white disabled:opacity-40">
                   <Check className="h-3 w-3" />
                 </button>
                 <button onClick={() => { setAddingDept(false); setNewDeptName(""); }}
-                  className="p-0.5 text-[#9B9088] hover:text-[#6B6360]">
+                  className="p-0.5 text-[#64748B] hover:text-white">
                   <X className="h-3 w-3" />
                 </button>
               </div>
             ) : (
               <button onClick={openAddDept}
-                className="ml-0.5 px-1.5 py-1 rounded-md text-[#9B9088] hover:text-[#D97757] transition-all"
+                className="ml-0.5 px-1.5 py-1 rounded-md text-[#64748B] hover:text-white transition-all"
                 title="Add department">
                 <Plus className="h-3 w-3" />
               </button>
@@ -230,16 +287,9 @@ export default function Dashboard() {
 
         <div className="flex items-center gap-2">
           <a href="/api/export" download
-            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#EDE8DF] text-[#6B6360] hover:bg-[#F5F1EA] hover:text-[#D97757] transition-colors">
+            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#334155] text-[#94A3B8] hover:bg-[#334155] hover:text-white transition-colors">
             <Download className="h-3.5 w-3.5" /> Export
           </a>
-          <AIQuickAdd
-            accounts={accounts}
-            categories={categories}
-            departments={departments}
-            defaultDepartment={activeDept !== "ALL" ? activeDept : "SELF"}
-            onCreated={fetchData}
-          />
           <AddTransactionDialog
             accounts={accounts}
             departments={departments}
@@ -250,232 +300,443 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-5">
 
-        {/* ── Summary cards ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            { label: "USD Balance", value: formatCurrency(usdBalance, "USD"), icon: DollarSign, color: "#D97757", bg: "#FDF4EE", sub: "Bank & Cash only" },
-            { label: "INR Balance", value: formatCurrency(inrBalance, "INR"), icon: IndianRupee, color: "#16A34A", bg: "#F0FDF4", sub: "Bank & Cash only" },
-            { label: "Total Debt",
-              value: totalDebtINR > 0 && totalDebtUSD === 0 ? formatCurrency(totalDebtINR, "INR")
-                : totalDebtUSD > 0 && totalDebtINR === 0 ? formatCurrency(totalDebtUSD, "USD")
-                : totalDebtINR > 0 && totalDebtUSD > 0 ? `${formatCurrency(totalDebtINR, "INR")} + ${formatCurrency(totalDebtUSD, "USD")}`
-                : "None",
-              icon: TrendingDown, color: "#DC2626", bg: "#FEF2F2", sub: `${debtAccounts.length} loans/debts`, red: true },
-            { label: "Pending Paybacks", value: pendingPaybacks.length > 0 ? `${pendingPaybacks.length} pending` : "All clear", icon: Clock, color: "#D97706", bg: "#FFFBEB", sub: "To be returned" },
-          ].map((c) => (
-            <div key={c.label} className="rounded-2xl border border-[#EDE8DF] bg-white p-4 shadow-sm overflow-hidden"
-              style={{ background: `linear-gradient(140deg, ${c.bg} 0%, #ffffff 60%)` }}>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-[#9B9088]">{c.label}</p>
-                <div className="p-1.5 rounded-xl" style={{ backgroundColor: c.color + "18" }}>
-                  <c.icon className="h-3.5 w-3.5" style={{ color: c.color }} />
-                </div>
-              </div>
-              <p className={`text-xl font-bold tracking-tight ${c.red && totalDebt > 0 ? "text-[#DC2626]" : "text-[#1A1815]"}`}>
-                {c.value}
-              </p>
-              <p className="text-[11px] text-[#9B9088] mt-0.5">{c.sub}</p>
-            </div>
+        {/* Mobile dept selector */}
+        <div className="sm:hidden flex gap-1 bg-[#1E293B] p-1 rounded-xl shadow-sm overflow-x-auto mb-4">
+          {ALL_DEPTS.map((d) => (
+            <button key={d.value} onClick={() => setActiveDept(d.value)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all min-w-[3rem] ${
+                activeDept === d.value ? "bg-[#6366F1] text-white font-semibold" : "text-[#94A3B8]"
+              }`}>{d.label}</button>
           ))}
         </div>
 
-        {/* mobile dept selector */}
-        <div className="sm:hidden space-y-2">
-          <div className="flex gap-1 bg-white border border-[#EDE8DF] p-1 rounded-xl shadow-sm flex-wrap">
-            {ALL_DEPTS.map((d) => (
-              <button key={d.value} onClick={() => setActiveDept(d.value)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all min-w-[3rem] ${
-                  activeDept === d.value ? "bg-[#D97757] text-white font-semibold" : "text-[#9B9088]"
-                }`}>
-                {d.label}
-              </button>
-            ))}
-          </div>
-          {addingDept ? (
-            <div className="flex items-center gap-2 bg-white border border-[#EDE8DF] p-2 rounded-xl shadow-sm">
-              <input
-                placeholder="New department name"
-                value={newDeptName}
-                onChange={(e) => setNewDeptName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAddDept();
-                  if (e.key === "Escape") { setAddingDept(false); setNewDeptName(""); }
-                }}
-                className="flex-1 text-xs px-2 py-1 border border-[#EDE8DF] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#D97757] bg-white text-[#1A1815]"
-              />
-              <button onClick={handleAddDept} disabled={savingDept || !newDeptName.trim()}
-                className="text-xs px-2 py-1 bg-[#D97757] text-white rounded-lg disabled:opacity-40 font-medium">
-                Add
-              </button>
-              <button onClick={() => { setAddingDept(false); setNewDeptName(""); }}
-                className="text-xs text-[#9B9088] px-1">✕</button>
-            </div>
-          ) : (
-            <button onClick={openAddDept}
-              className="w-full flex items-center justify-center gap-1 py-1.5 text-xs text-[#9B9088] bg-white border border-dashed border-[#EDE8DF] rounded-xl hover:border-[#D97757] hover:text-[#D97757] transition-colors">
-              <Plus className="h-3 w-3" /> Add Department
-            </button>
-          )}
-        </div>
-
-        {/* ── Category breakdown (clickable) ── */}
-        {!loading && allTransactions.length > 0 && (
-          <div className="bg-white rounded-2xl border border-[#EDE8DF] shadow-sm p-4">
-            <CategoryBreakdown transactions={allTransactions} />
-          </div>
-        )}
-
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-[#9B9088] text-sm">Loading…</div>
+          <div className="flex items-center justify-center py-20 text-[#64748B] text-sm">Loading…</div>
         ) : (
-          <>
-            {/* mobile tab switcher */}
-            <div className="flex lg:hidden gap-1 bg-white border border-[#EDE8DF] p-1 rounded-xl shadow-sm overflow-x-auto">
-              {(["accounts", "transactions", "owing", "loans", "bills"] as const).map((t) => (
-                <button key={t} onClick={() => setActiveTab(t)}
-                  className={`flex-1 min-w-[4.5rem] py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
-                    activeTab === t ? "bg-[#D97757] text-white" : "text-[#9B9088] hover:text-[#D97757]"
-                  }`}>{t}</button>
-              ))}
+
+          /* ══ MAIN GRID: [card][card][card][card][card] | [donut]
+                          [   detail panel (col-span-5)  ] | [donut] */
+          <div
+            className="grid gap-4"
+            style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr)) 270px" }}
+          >
+
+            {/* ── Card 1: Banks & Cash ── */}
+            <DashCard
+              title="Banks & Cash" icon={<Landmark className="h-4 w-4" />}
+              color="#059669" bg="#ECFDF5" border="#A7F3D0"
+              active={selectedCard === "banks"}
+              onClick={() => setSelectedCard("banks")}
+              sub={`${bankCashAccounts.length} account${bankCashAccounts.length !== 1 ? "s" : ""}`}
+            >
+              {bankUSD > 0 && <p className="text-[19px] font-extrabold text-slate-800 leading-tight">{formatCurrency(bankUSD, "USD")}</p>}
+              {bankINR > 0 && <p className="text-[19px] font-extrabold text-slate-800 leading-tight">{formatCurrency(bankINR, "INR")}</p>}
+              {bankUSD === 0 && bankINR === 0 && <p className="text-[17px] font-bold text-slate-300">$0.00</p>}
+            </DashCard>
+
+            {/* ── Card 2: Credit Cards ── */}
+            <DashCard
+              title="Credit Cards" icon={<CreditCard className="h-4 w-4" />}
+              color="#7C3AED" bg="#F5F3FF" border="#DDD6FE"
+              active={selectedCard === "creditcards"}
+              onClick={() => setSelectedCard("creditcards")}
+              sub={`${ccAccounts.length} card${ccAccounts.length !== 1 ? "s" : ""}`}
+            >
+              {ccUsedUSD > 0 && (
+                <div>
+                  <p className="text-[19px] font-extrabold text-violet-700 leading-tight">{formatCurrency(ccUsedUSD, "USD")}</p>
+                  {ccLimitUSD > 0 && <p className="text-[10px] text-slate-400">of {formatCurrency(ccLimitUSD, "USD")} limit</p>}
+                </div>
+              )}
+              {ccUsedINR > 0 && (
+                <div>
+                  <p className="text-[19px] font-extrabold text-violet-700 leading-tight">{formatCurrency(ccUsedINR, "INR")}</p>
+                  {ccLimitINR > 0 && <p className="text-[10px] text-slate-400">of {formatCurrency(ccLimitINR, "INR")} limit</p>}
+                </div>
+              )}
+              {ccUsedUSD === 0 && ccUsedINR === 0 && <p className="text-[17px] font-bold text-slate-300">None</p>}
+            </DashCard>
+
+            {/* ── Card 3: Total Loans ── */}
+            <DashCard
+              title="Total Loans" icon={<TrendingDown className="h-4 w-4" />}
+              color="#DC2626" bg="#FEF2F2" border="#FECACA"
+              active={selectedCard === "loans"}
+              onClick={() => setSelectedCard("loans")}
+              sub={`${loanDebtAccts.length} account${loanDebtAccts.length !== 1 ? "s" : ""}`}
+            >
+              {totalDebtINR > 0 && <p className="text-[19px] font-extrabold text-red-600 leading-tight">{formatCurrency(totalDebtINR, "INR")}</p>}
+              {totalDebtUSD > 0 && <p className="text-[19px] font-extrabold text-red-600 leading-tight">{formatCurrency(totalDebtUSD, "USD")}</p>}
+              {totalDebt === 0 && <p className="text-[17px] font-bold text-slate-300">None</p>}
+            </DashCard>
+
+            {/* ── Card 4: Borrowed from People ── */}
+            <DashCard
+              title="Borrowed from People" icon={<HandCoins className="h-4 w-4" />}
+              color="#D97706" bg="#FFFBEB" border="#FDE68A"
+              active={selectedCard === "borrowed"}
+              onClick={() => setSelectedCard("borrowed")}
+              sub={`${activeBorrowed.length} active`}
+            >
+              {borrowedINR > 0 && <p className="text-[19px] font-extrabold text-amber-700 leading-tight">{formatCurrency(borrowedINR, "INR")}</p>}
+              {borrowedUSD > 0 && <p className="text-[19px] font-extrabold text-amber-700 leading-tight">{formatCurrency(borrowedUSD, "USD")}</p>}
+              {borrowedINR === 0 && borrowedUSD === 0 && <p className="text-[17px] font-bold text-slate-300">None</p>}
+            </DashCard>
+
+            {/* ── Card 5: Lent to People ── */}
+            <DashCard
+              title="Lent to People" icon={<Users className="h-4 w-4" />}
+              color="#0284C7" bg="#F0F9FF" border="#BAE6FD"
+              active={selectedCard === "lent"}
+              onClick={() => setSelectedCard("lent")}
+              sub={`${activeOwings.length + activeLentHand.length} pending`}
+            >
+              {lentINR > 0 && <p className="text-[19px] font-extrabold text-sky-700 leading-tight">{formatCurrency(lentINR, "INR")}</p>}
+              {lentUSD > 0 && <p className="text-[19px] font-extrabold text-sky-700 leading-tight">{formatCurrency(lentUSD, "USD")}</p>}
+              {lentINR === 0 && lentUSD === 0 && <p className="text-[17px] font-bold text-slate-300">None</p>}
+            </DashCard>
+
+            {/* ── Donut Chart — spans rows 1 & 2 ── */}
+            <div className="row-span-2 bg-white rounded-2xl border border-sky-100 shadow-md p-4 flex flex-col min-h-0">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Spending Summary</p>
+              {allTransactions.length > 0
+                ? <DonutChart transactions={allTransactions} />
+                : <div className="flex-1 flex items-center justify-center text-sm text-slate-300">No transactions yet</div>
+              }
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+            {/* ── Detail Panel — col-span-5 ── */}
+            <div className="col-span-5 bg-white rounded-2xl border border-sky-100 shadow-md overflow-auto" style={{ maxHeight: "calc(100vh - 220px)", minHeight: "480px" }}>
 
-              {/* ── Left: Accounts panel ── */}
-              <div className={`lg:col-span-3 space-y-4 ${activeTab !== "accounts" ? "hidden lg:block" : ""}`}>
+              {/* Banks & Cash */}
+              {selectedCard === "banks" && (
+                <div className="p-5 space-y-5">
 
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xs font-semibold text-[#D97757] uppercase tracking-widest">Accounts</h2>
-                  <span className="text-xs text-[#9B9088]">{accounts.length} total</span>
-                </div>
-
-                {accounts.length === 0 ? (
-                  <div className="bg-white rounded-2xl border-2 border-dashed border-[#EDE8DF] py-16 text-center">
-                    <p className="text-sm text-[#9B9088] font-medium">No accounts yet</p>
-                    <p className="text-xs text-[#C4B8A8] mt-1">Click "Add Account" to get started</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {accountsByType.map(({ type, accounts: typeAccounts }) => (
-                      <AccountTypeGroup
-                        key={type}
-                        type={type}
-                        accounts={typeAccounts}
-                        onUpdated={fetchData}
-                        departments={departments}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {pendingPaybacks.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-semibold text-[#D97706] uppercase tracking-widest mb-2">
-                      Pending Paybacks · {pendingPaybacks.length}
-                    </h3>
-                    <div className="bg-white rounded-2xl border border-[#F5D99B] shadow-sm divide-y divide-[#FEF9EE] px-3">
-                      {pendingPaybacks.map((t) => (
-                        <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />
-                      ))}
+                  {/* ── Totals summary bar ── */}
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="rounded-xl p-3" style={{ background: "linear-gradient(135deg,#ECFDF5,#D1FAE5)" }}>
+                      <p className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Total In</p>
+                      {totalInUSD > 0 && <p className="text-[15px] font-extrabold text-emerald-700 leading-tight">+{formatCurrency(totalInUSD,"USD")}</p>}
+                      {totalInINR > 0 && <p className="text-[15px] font-extrabold text-emerald-700 leading-tight">+{formatCurrency(totalInINR,"INR")}</p>}
+                      {totalInUSD === 0 && totalInINR === 0 && <p className="text-[13px] font-bold text-emerald-400">—</p>}
+                      <p className="text-[9px] text-emerald-600 mt-0.5">{incomeTxns.length} transactions</p>
+                    </div>
+                    <div className="rounded-xl p-3" style={{ background: "linear-gradient(135deg,#FEF2F2,#FECACA)" }}>
+                      <p className="text-[9px] font-bold text-red-600 uppercase tracking-widest mb-1">Total Out</p>
+                      {totalOutUSD > 0 && <p className="text-[15px] font-extrabold text-red-600 leading-tight">−{formatCurrency(totalOutUSD,"USD")}</p>}
+                      {totalOutINR > 0 && <p className="text-[15px] font-extrabold text-red-600 leading-tight">−{formatCurrency(totalOutINR,"INR")}</p>}
+                      {totalOutUSD === 0 && totalOutINR === 0 && <p className="text-[13px] font-bold text-red-300">—</p>}
+                      <p className="text-[9px] text-red-500 mt-0.5">{expenseTxns.length} transactions</p>
+                    </div>
+                    <div className="rounded-xl p-3" style={{ background: "linear-gradient(135deg,#FFF7ED,#FED7AA)" }}>
+                      <p className="text-[9px] font-bold text-amber-600 uppercase tracking-widest mb-1">Pending Paybacks</p>
+                      <p className="text-[15px] font-extrabold text-amber-700 leading-tight">{pendingPaybacks.length > 0 ? `${pendingPaybacks.length} items` : "—"}</p>
+                      {pendingPaybacks.length > 0 && <p className="text-[9px] text-amber-600 mt-0.5">~{formatCurrency(pendingPaybackAmt,"USD")} equiv.</p>}
+                    </div>
+                    <div className="rounded-xl p-3" style={{ background: "linear-gradient(135deg,#EFF6FF,#BFDBFE)" }}>
+                      <p className="text-[9px] font-bold text-blue-600 uppercase tracking-widest mb-1">Cross-Dept Txns</p>
+                      <p className="text-[15px] font-extrabold text-blue-700 leading-tight">{crossDeptTxns.length > 0 ? crossDeptTxns.length : "—"}</p>
+                      {crossDeptTxns.length > 0 && <p className="text-[9px] text-blue-500 mt-0.5">from other depts</p>}
                     </div>
                   </div>
-                )}
 
-                {/* ── Expected Income (left col, desktop) ── */}
-                <div className="hidden lg:block bg-white rounded-2xl border border-[#EDE8DF] shadow-sm p-4">
-                  <ExpectedIncomePanel items={expectedIncomes} onUpdated={fetchData} accounts={accounts} departments={departments} />
-                </div>
-              </div>
+                  {/* Ministry: Given By summary */}
+                  {activeDept === "MINISTRY" && deptTransactions.some(t => t.type === "INCOME" && t.givenBy?.trim()) && (
+                    <div>
+                      <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-2">Given By — Ministry Income Sources</p>
+                      <GivenBySummary transactions={deptTransactions} />
+                    </div>
+                  )}
 
-              {/* ── Right column ── */}
-              <div className={`lg:col-span-2 space-y-5 ${activeTab === "accounts" ? "hidden lg:block" : ""}`}>
+                  {/* Accounts */}
+                  {bankCashAccounts.length === 0
+                    ? <p className="text-sm text-slate-400 text-center py-8">No bank or cash accounts yet</p>
+                    : <div className="space-y-3">
+                        {accountsByType.filter(g => ["BANK","CASH"].includes(g.type)).map(({type, accounts: a}) => (
+                          <AccountTypeGroup key={type} type={type} accounts={a} onUpdated={fetchData} departments={departments} />
+                        ))}
+                      </div>
+                  }
 
-                {/* Transactions with month groups */}
-                <div className={activeTab === "owing" || activeTab === "loans" || activeTab === "bills" ? "hidden lg:block" : ""}>
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-xs font-semibold text-[#D97757] uppercase tracking-widest">Transactions</h2>
-                    <span className="text-xs text-[#9B9088]">{transactions.length} shown</span>
-                  </div>
-                  <div className="bg-white rounded-2xl border border-[#EDE8DF] shadow-sm overflow-hidden">
-                    {transactions.length === 0 ? (
-                      <div className="py-12 text-center text-[#9B9088] text-sm">No transactions yet</div>
-                    ) : (
-                      <div className="px-3">
-                        {monthGroups.map(({ label, txns }) => (
-                          <div key={label}>
-                            <div className="sticky top-0 z-[1] py-2 -mx-3 px-3 bg-[#FAF9F6] border-b border-[#EDE8DF]">
-                              <div className="flex items-center justify-between">
-                                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9B9088]">{label}</p>
-                                <div className="flex gap-3 text-[10px]">
-                                  {(() => {
-                                    const inc = txns.filter((t) => t.type === "INCOME").reduce((s, t) => s + t.amount, 0);
-                                    const exp = txns.filter((t) => t.type === "EXPENSE").reduce((s, t) => s + t.amount, 0);
-                                    const currency = txns[0]?.fromAccount?.currency ?? txns[0]?.toAccount?.currency ?? "USD";
-                                    return (
-                                      <>
-                                        {inc > 0 && <span className="text-emerald-600 font-medium">+{formatCurrency(inc, currency)}</span>}
-                                        {exp > 0 && <span className="text-red-500 font-medium">−{formatCurrency(exp, currency)}</span>}
-                                      </>
-                                    );
-                                  })()}
+                  {/* Pending paybacks */}
+                  {pendingPaybacks.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-2">Pending Paybacks · {pendingPaybacks.length}</p>
+                      <div className="bg-amber-50 rounded-xl border border-amber-100 px-3 divide-y divide-amber-50">
+                        {pendingPaybacks.map(t => (
+                          <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Money In / Money Out split ── */}
+                  {deptTransactions.length > 0 && (() => {
+                    const incoming = deptTransactions.filter(t => t.type === "INCOME");
+                    const outgoing = deptTransactions.filter(t => t.type === "EXPENSE");
+                    const inGroups  = groupByMonth(incoming);
+                    const outGroups = groupByMonth(outgoing);
+                    return (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <ArrowDownLeft className="h-3.5 w-3.5 text-emerald-500" />
+                            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Money In · {incoming.length}</p>
+                          </div>
+                          {incoming.length === 0
+                            ? <p className="text-xs text-slate-400 py-4 text-center">No income yet</p>
+                            : <div className="space-y-4">{inGroups.map(({ label, txns }) => (
+                                <div key={label}>
+                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
+                                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 px-3 divide-y divide-emerald-50">
+                                    {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                                  </div>
                                 </div>
-                              </div>
+                              ))}</div>
+                          }
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <ArrowUpRight className="h-3.5 w-3.5 text-red-500" />
+                            <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Money Out · {outgoing.length}</p>
+                          </div>
+                          {outgoing.length === 0
+                            ? <p className="text-xs text-slate-400 py-4 text-center">No expenses yet</p>
+                            : <div className="space-y-4">{outGroups.map(({ label, txns }) => (
+                                <div key={label}>
+                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
+                                  <div className="rounded-xl border border-red-100 bg-red-50/30 px-3 divide-y divide-red-50">
+                                    {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                                  </div>
+                                </div>
+                              ))}</div>
+                          }
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── Cross-Department Transactions ── */}
+                  {crossDeptTxns.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <ArrowLeftRight className="h-3.5 w-3.5 text-blue-500" />
+                        <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Cross-Dept Transactions · {crossDeptTxns.length} (not counted above)</p>
+                      </div>
+                      <div className="rounded-xl border-2 border-blue-200 bg-blue-50/40 divide-y divide-blue-100">
+                        {crossDeptTxns.map(t => (
+                          <div key={t.id}>
+                            <div className="px-3 pt-2 pb-0">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                                <ArrowLeftRight className="h-2.5 w-2.5" /> from {t.department} · not counted in totals
+                              </span>
                             </div>
-                            {txns.map((t) => (
-                              <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />
-                            ))}
+                            <div className="px-3">
+                              <TransactionRow txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />
+                            </div>
                           </div>
                         ))}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
+              )}
 
-                {/* Owing panel */}
-                <div className={`bg-white rounded-2xl border border-[#EDE8DF] shadow-sm p-4 ${activeTab === "transactions" ? "hidden lg:block" : ""} ${activeTab === "loans" || activeTab === "bills" ? "hidden lg:block" : ""}`}>
-                  <OwingPanel owings={owings} onUpdated={fetchData} departments={departments} />
+              {/* Credit Cards */}
+              {selectedCard === "creditcards" && (
+                <div className="p-5 space-y-5">
+                  <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest">Credit Cards — Balances & Transactions</p>
+                  {ccAccounts.length === 0
+                    ? <p className="text-sm text-slate-400 text-center py-8">No credit cards yet</p>
+                    : <div className="space-y-3">
+                        {accountsByType.filter(g => g.type === "CREDIT_CARD").map(({type, accounts: a}) => (
+                          <AccountTypeGroup key={type} type={type} accounts={a} onUpdated={fetchData} departments={departments} />
+                        ))}
+                      </div>
+                  }
+                  {ccTransactions.length > 0 && (() => {
+                    const ccIn  = ccTransactions.filter(t => t.type === "INCOME");
+                    const ccOut = ccTransactions.filter(t => t.type === "EXPENSE");
+                    const ccInGroups  = groupByMonth(ccIn);
+                    const ccOutGroups = groupByMonth(ccOut);
+                    return (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <ArrowDownLeft className="h-3.5 w-3.5 text-emerald-500" />
+                            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">CC Income · {ccIn.length}</p>
+                          </div>
+                          {ccIn.length === 0
+                            ? <p className="text-xs text-slate-400 py-3 text-center">No income via CC</p>
+                            : <div className="space-y-4">{ccInGroups.map(({label,txns}) => (
+                                <div key={label}>
+                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
+                                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 px-3 divide-y divide-emerald-50">
+                                    {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                                  </div>
+                                </div>
+                              ))}</div>
+                          }
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <ArrowUpRight className="h-3.5 w-3.5 text-violet-500" />
+                            <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest">CC Charges · {ccOut.length}</p>
+                          </div>
+                          {ccOut.length === 0
+                            ? <p className="text-xs text-slate-400 py-3 text-center">No charges yet</p>
+                            : <div className="space-y-4">{ccOutGroups.map(({label,txns}) => (
+                                <div key={label}>
+                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
+                                  <div className="rounded-xl border border-violet-100 bg-violet-50/30 px-3 divide-y divide-violet-50">
+                                    {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                                  </div>
+                                </div>
+                              ))}</div>
+                          }
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
+              )}
 
-                {/* Hand Loans panel */}
-                <div className={`bg-white rounded-2xl border border-[#EDE8DF] shadow-sm p-4 ${activeTab !== "loans" ? "hidden lg:block" : ""}`}>
-                  <HandLoanPanel loans={handLoans} onUpdated={fetchData} accounts={accounts} departments={departments} />
-                </div>
-
-                {/* Recurring Bills panel */}
-                <div className={`bg-white rounded-2xl border border-[#EDE8DF] shadow-sm p-4 ${activeTab !== "bills" ? "hidden lg:block" : ""}`}>
+              {/* Loans */}
+              {selectedCard === "loans" && (
+                <div className="p-5 space-y-5">
+                  <p className="text-[10px] font-bold text-red-600 uppercase tracking-widest">Loans & Debt — Total Amount</p>
+                  {loanDebtAccts.length === 0
+                    ? <p className="text-sm text-slate-400 text-center py-8">No loan or debt accounts</p>
+                    : <div className="space-y-3">
+                        {accountsByType.filter(g => ["LOAN","DEBT"].includes(g.type)).map(({type, accounts: a}) => (
+                          <AccountTypeGroup key={type} type={type} accounts={a} onUpdated={fetchData} departments={departments} />
+                        ))}
+                      </div>
+                  }
                   <RecurringBillsPanel bills={recurringBills} onUpdated={fetchData} accounts={accounts} departments={departments} />
                 </div>
+              )}
 
-                {/* Expected Income (mobile / right col) */}
-                <div className={`bg-white rounded-2xl border border-[#EDE8DF] shadow-sm p-4 lg:hidden ${activeTab !== "accounts" ? "" : "hidden"}`}>
+              {/* Borrowed from People — only BORROWED type */}
+              {selectedCard === "borrowed" && (
+                <div className="p-5">
+                  <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-4">Money Borrowed from People</p>
+                  <HandLoanPanel loans={handLoans.filter(hl => hl.type === "BORROWED")} onUpdated={fetchData} accounts={accounts} departments={departments} />
+                </div>
+              )}
+
+              {/* Lent to People — owings + hand-lent */}
+              {selectedCard === "lent" && (
+                <div className="p-5 space-y-5">
+                  <p className="text-[10px] font-bold text-sky-600 uppercase tracking-widest">Money Lent to People</p>
+                  <OwingPanel owings={owings} onUpdated={fetchData} departments={departments} />
+                  {activeLentHand.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold text-sky-500 uppercase tracking-widest mb-3">Hand Loans — Lent</p>
+                      <HandLoanPanel loans={handLoans.filter(hl => hl.type === "LENT")} onUpdated={fetchData} accounts={accounts} departments={departments} />
+                    </div>
+                  )}
                   <ExpectedIncomePanel items={expectedIncomes} onUpdated={fetchData} accounts={accounts} departments={departments} />
+                  {activeDept === "MINISTRY" && deptTransactions.some(t => t.type === "INCOME" && t.givenBy?.trim()) && (
+                    <GivenBySummary transactions={deptTransactions} />
+                  )}
                 </div>
-
-                {/* Given By Summary */}
-                {allTransactions.some((t) => t.type === "INCOME" && t.givenBy?.trim()) && (
-                  <div className={`bg-white rounded-2xl border border-[#EDE8DF] shadow-sm p-4 ${activeTab === "loans" || activeTab === "bills" ? "hidden lg:block" : ""}`}>
-                    <GivenBySummary transactions={allTransactions} />
-                  </div>
-                )}
-
-                {/* AI Insights */}
-                <div className={`bg-white rounded-2xl border border-violet-100 shadow-sm p-4 ${activeTab === "loans" || activeTab === "bills" ? "hidden lg:block" : ""}`}>
-                  <AIInsightsPanel
-                    transactions={allTransactions}
-                    accounts={accounts}
-                    owings={owings}
-                    handLoans={handLoans}
-                    recurringBills={recurringBills}
-                    department={activeDept}
-                  />
-                </div>
-              </div>
+              )}
             </div>
-          </>
+
+          </div>
         )}
       </main>
+    </div>
+  );
+}
+
+/* ── DashCard ── */
+function DashCard({ title, icon, color, bg, border, active, onClick, sub, children }: {
+  title: string; icon: React.ReactNode; color: string; bg: string; border: string;
+  active: boolean; onClick: () => void; sub: string; children: React.ReactNode;
+}) {
+  return (
+    <button onClick={onClick}
+      className="text-left rounded-2xl border p-4 transition-all duration-200 cursor-pointer w-full group"
+      style={{
+        background: active
+          ? `linear-gradient(145deg, ${bg} 0%, #fff 60%)`
+          : "rgba(255,255,255,0.85)",
+        borderColor: active ? color : border,
+        boxShadow: active
+          ? `0 0 0 2px ${color}44, 0 8px 24px ${color}18`
+          : "0 2px 8px rgba(99,102,241,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+        backdropFilter: "blur(8px)",
+      }}>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[9px] font-bold uppercase tracking-widest leading-tight" style={{ color: active ? color : "#94A3B8" }}>{title}</p>
+        <div className="p-1.5 rounded-xl shrink-0 transition-transform group-hover:scale-110" style={{ backgroundColor: color + "18" }}>
+          <span style={{ color }}>{icon}</span>
+        </div>
+      </div>
+      <div className="space-y-0.5">{children}</div>
+      <p className="text-[10px] text-slate-400 mt-2 font-medium">{sub}</p>
+      {active && <div className="mt-3 h-[3px] rounded-full w-full" style={{ background: `linear-gradient(90deg, ${color}, ${color}88)` }} />}
+    </button>
+  );
+}
+
+/* ── DonutChart ── */
+const DONUT_COLORS: Record<string, string> = {
+  "Food & Dining":"#f97316","Bills & Utilities":"#6366f1","Transport":"#3b82f6",
+  "Shopping":"#ec4899","Health":"#ef4444","Education":"#8b5cf6","Ministry":"#14b8a6",
+  "Rent":"#f59e0b","Loan Payment":"#dc2626","Credit Card Payment":"#7c3aed",
+  "Bank Transfer":"#64748b","International Transfer":"#0ea5e9","Fee":"#94a3b8","Other":"#a8a29e",
+};
+const FALLBACK_COLORS = ["#D97757","#16A34A","#2563EB","#9333EA","#0891B2","#DB2777","#65A30D","#B45309"];
+function donutColor(cat: string, idx: number) { return DONUT_COLORS[cat] ?? FALLBACK_COLORS[idx % FALLBACK_COLORS.length]; }
+
+function DonutChart({ transactions }: { transactions: { type: string; amount: number; category: string; fromAccount?: { currency: string } | null; toAccount?: { currency: string } | null }[] }) {
+  const expenses = transactions.filter(t => t.type === "EXPENSE");
+  const map: Record<string, number> = {};
+  for (const t of expenses) {
+    const cur = t.fromAccount?.currency ?? t.toAccount?.currency ?? "USD";
+    map[t.category] = (map[t.category] ?? 0) + (cur === "USD" ? t.amount : t.amount / 84);
+  }
+  const cats = Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, 8);
+  const total = cats.reduce((s,[,v]) => s+v, 0);
+  if (cats.length === 0) return <p className="text-xs text-[#C4B8A8] text-center py-4">No expenses</p>;
+
+  const r = 52, cx = 60, cy = 60, circ = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <div className="flex flex-col items-center gap-3 flex-1">
+      <svg width="120" height="120" viewBox="0 0 120 120">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F0EBE3" strokeWidth="20" />
+        {cats.map(([cat, val], idx) => {
+          const dash = (val / total) * circ;
+          const el = (
+            <circle key={cat} cx={cx} cy={cy} r={r} fill="none"
+              stroke={donutColor(cat, idx)} strokeWidth="20"
+              strokeDasharray={`${dash} ${circ - dash}`}
+              strokeDashoffset={-offset}
+              style={{ transform: "rotate(-90deg)", transformOrigin: `${cx}px ${cy}px` }} />
+          );
+          offset += dash;
+          return el;
+        })}
+        <text x={cx} y={cy - 4} textAnchor="middle" fill="#1E293B" fontSize="10" fontWeight="700">{cats.length}</text>
+        <text x={cx} y={cy + 8} textAnchor="middle" fill="#94A3B8" fontSize="8">categories</text>
+      </svg>
+      <div className="w-full space-y-1 overflow-y-auto" style={{ maxHeight: "220px" }}>
+        {cats.map(([cat, val], idx) => (
+          <div key={cat} className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: donutColor(cat, idx) }} />
+              <span className="text-[11px] text-slate-500 truncate">{cat}</span>
+            </div>
+            <span className="text-[11px] font-bold text-slate-700 shrink-0">{((val/total)*100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
