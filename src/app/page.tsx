@@ -199,6 +199,12 @@ export default function Dashboard() {
     ((t.fromAccount?.id && deptAccountIds.has(t.fromAccount.id)) ||
      (t.toAccount?.id   && deptAccountIds.has(t.toAccount.id)))
   );
+  // Set for O(1) cross-dept lookup when rendering
+  const crossDeptSet = new Set(crossDeptTxns.map(t => t.id));
+  // Merged display list: own txns + cross-dept txns, sorted by date
+  const allDeptDisplay = [...deptTransactions, ...crossDeptTxns].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
 
   // Totals for current dept
   const incomeTxns  = deptTransactions.filter(t => t.type === "INCOME");
@@ -475,12 +481,30 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {/* ── Money In / Money Out split ── */}
-                  {deptTransactions.length > 0 && (() => {
-                    const incoming = deptTransactions.filter(t => t.type === "INCOME");
-                    const outgoing = deptTransactions.filter(t => t.type === "EXPENSE");
+                  {/* ── Money In / Money Out split (includes cross-dept txns inline) ── */}
+                  {allDeptDisplay.length > 0 && (() => {
+                    const incoming = allDeptDisplay.filter(t => t.type === "INCOME");
+                    const outgoing = allDeptDisplay.filter(t => t.type === "EXPENSE");
                     const inGroups  = groupByMonth(incoming);
                     const outGroups = groupByMonth(outgoing);
+
+                    // Render a row — cross-dept ones get a left-border + source badge
+                    function TxnRow(t: Transaction) {
+                      const isCross = crossDeptSet.has(t.id);
+                      return (
+                        <div key={t.id} className={isCross ? "-mx-3 px-3 border-l-2 border-blue-400 bg-blue-50/40" : ""}>
+                          {isCross && (
+                            <div className="pt-1.5">
+                              <span className="inline-flex items-center gap-1 text-[8px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded-full">
+                                <ArrowLeftRight className="h-2 w-2" /> {t.department}
+                              </span>
+                            </div>
+                          )}
+                          <TransactionRow txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />
+                        </div>
+                      );
+                    }
+
                     return (
                       <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -493,8 +517,8 @@ export default function Dashboard() {
                             : <div className="space-y-4">{inGroups.map(({ label, txns }) => (
                                 <div key={label}>
                                   <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
-                                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 px-3 divide-y divide-emerald-50">
-                                    {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 px-3 divide-y divide-emerald-50 overflow-hidden">
+                                    {txns.map(t => TxnRow(t))}
                                   </div>
                                 </div>
                               ))}</div>
@@ -510,8 +534,8 @@ export default function Dashboard() {
                             : <div className="space-y-4">{outGroups.map(({ label, txns }) => (
                                 <div key={label}>
                                   <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
-                                  <div className="rounded-xl border border-red-100 bg-red-50/30 px-3 divide-y divide-red-50">
-                                    {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                                  <div className="rounded-xl border border-red-100 bg-red-50/30 px-3 divide-y divide-red-50 overflow-hidden">
+                                    {txns.map(t => TxnRow(t))}
                                   </div>
                                 </div>
                               ))}</div>
@@ -521,42 +545,6 @@ export default function Dashboard() {
                     );
                   })()}
 
-                  {/* ── Cross-Department Transactions ── */}
-                  {crossDeptTxns.length > 0 && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <ArrowLeftRight className="h-3.5 w-3.5 text-blue-500" />
-                        <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">
-                          Cross-Dept · {crossDeptTxns.length} txn{crossDeptTxns.length !== 1 ? "s" : ""}
-                          <span className="ml-1 font-normal normal-case text-[9px] text-blue-400">using this dept's accounts — not counted in your totals</span>
-                        </p>
-                      </div>
-                      <div className="space-y-3">
-                        {(() => {
-                          const byDept = new Map<string, Transaction[]>();
-                          for (const t of crossDeptTxns) {
-                            if (!byDept.has(t.department)) byDept.set(t.department, []);
-                            byDept.get(t.department)!.push(t);
-                          }
-                          return Array.from(byDept.entries()).map(([dept, txns]) => (
-                            <div key={dept}>
-                              <div className="flex items-center gap-2 mb-1.5">
-                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                                  <ArrowLeftRight className="h-2.5 w-2.5" /> {dept}
-                                </span>
-                                <span className="text-[9px] text-slate-400">{txns.length} transaction{txns.length !== 1 ? "s" : ""}</span>
-                              </div>
-                              <div className="rounded-xl border border-blue-200 bg-blue-50/30 px-3 divide-y divide-blue-100">
-                                {txns.map(t => (
-                                  <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />
-                                ))}
-                              </div>
-                            </div>
-                          ));
-                        })()}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
