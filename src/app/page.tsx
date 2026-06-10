@@ -481,12 +481,14 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {/* ── Money In / Money Out split (includes cross-dept txns inline) ── */}
+                  {/* ── Money In / Money Out / Transfers split (includes cross-dept txns inline) ── */}
                   {allDeptDisplay.length > 0 && (() => {
-                    const incoming = allDeptDisplay.filter(t => t.type === "INCOME");
-                    const outgoing = allDeptDisplay.filter(t => t.type === "EXPENSE");
+                    const incoming  = allDeptDisplay.filter(t => t.type === "INCOME");
+                    const outgoing  = allDeptDisplay.filter(t => t.type === "EXPENSE");
+                    const transfers = allDeptDisplay.filter(t => t.type === "TRANSFER");
                     const inGroups  = groupByMonth(incoming);
                     const outGroups = groupByMonth(outgoing);
+                    const trGroups  = groupByMonth(transfers);
 
                     // Render a row — cross-dept ones get a left-border + source badge
                     function TxnRow(t: Transaction) {
@@ -506,41 +508,61 @@ export default function Dashboard() {
                     }
 
                     return (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <ArrowDownLeft className="h-3.5 w-3.5 text-emerald-500" />
-                            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Money In · {incoming.length}</p>
-                          </div>
-                          {incoming.length === 0
-                            ? <p className="text-xs text-slate-400 py-4 text-center">No income yet</p>
-                            : <div className="space-y-4">{inGroups.map(({ label, txns }) => (
-                                <div key={label}>
-                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
-                                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 px-3 divide-y divide-emerald-50 overflow-hidden">
-                                    {txns.map(t => TxnRow(t))}
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <ArrowDownLeft className="h-3.5 w-3.5 text-emerald-500" />
+                              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Money In · {incoming.length}</p>
+                            </div>
+                            {incoming.length === 0
+                              ? <p className="text-xs text-slate-400 py-4 text-center">No income yet</p>
+                              : <div className="space-y-4">{inGroups.map(({ label, txns }) => (
+                                  <div key={label}>
+                                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
+                                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 px-3 divide-y divide-emerald-50 overflow-hidden">
+                                      {txns.map(t => TxnRow(t))}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}</div>
-                          }
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <ArrowUpRight className="h-3.5 w-3.5 text-red-500" />
-                            <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Money Out · {outgoing.length}</p>
+                                ))}</div>
+                            }
                           </div>
-                          {outgoing.length === 0
-                            ? <p className="text-xs text-slate-400 py-4 text-center">No expenses yet</p>
-                            : <div className="space-y-4">{outGroups.map(({ label, txns }) => (
-                                <div key={label}>
-                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
-                                  <div className="rounded-xl border border-red-100 bg-red-50/30 px-3 divide-y divide-red-50 overflow-hidden">
-                                    {txns.map(t => TxnRow(t))}
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <ArrowUpRight className="h-3.5 w-3.5 text-red-500" />
+                              <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Money Out · {outgoing.length}</p>
+                            </div>
+                            {outgoing.length === 0
+                              ? <p className="text-xs text-slate-400 py-4 text-center">No expenses yet</p>
+                              : <div className="space-y-4">{outGroups.map(({ label, txns }) => (
+                                  <div key={label}>
+                                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
+                                    <div className="rounded-xl border border-red-100 bg-red-50/30 px-3 divide-y divide-red-50 overflow-hidden">
+                                      {txns.map(t => TxnRow(t))}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}</div>
-                          }
+                                ))}</div>
+                            }
+                          </div>
                         </div>
+
+                        {/* Transfers (CC payments, account-to-account moves) */}
+                        {transfers.length > 0 && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <ArrowLeftRight className="h-3.5 w-3.5 text-indigo-500" />
+                              <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Transfers · {transfers.length}</p>
+                            </div>
+                            <div className="space-y-4">{trGroups.map(({ label, txns }) => (
+                              <div key={label}>
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
+                                <div className="rounded-xl border border-indigo-100 bg-indigo-50/20 px-3 divide-y divide-indigo-50 overflow-hidden">
+                                  {txns.map(t => TxnRow(t))}
+                                </div>
+                              </div>
+                            ))}</div>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
@@ -561,46 +583,72 @@ export default function Dashboard() {
                       </div>
                   }
                   {ccTransactions.length > 0 && (() => {
-                    const ccIn  = ccTransactions.filter(t => t.type === "INCOME");
-                    const ccOut = ccTransactions.filter(t => t.type === "EXPENSE");
-                    const ccInGroups  = groupByMonth(ccIn);
-                    const ccOutGroups = groupByMonth(ccOut);
+                    const ccIn       = ccTransactions.filter(t => t.type === "INCOME");
+                    const ccOut      = ccTransactions.filter(t => t.type === "EXPENSE");
+                    // CC Payments = transfers where the destination is a CC account
+                    const ccPayments = ccTransactions.filter(t =>
+                      t.type === "TRANSFER" && t.toAccount?.id && ccAccountIds.has(t.toAccount.id)
+                    );
+                    const ccInGroups       = groupByMonth(ccIn);
+                    const ccOutGroups      = groupByMonth(ccOut);
+                    const ccPaymentGroups  = groupByMonth(ccPayments);
                     return (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <ArrowDownLeft className="h-3.5 w-3.5 text-emerald-500" />
-                            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">CC Income · {ccIn.length}</p>
-                          </div>
-                          {ccIn.length === 0
-                            ? <p className="text-xs text-slate-400 py-3 text-center">No income via CC</p>
-                            : <div className="space-y-4">{ccInGroups.map(({label,txns}) => (
-                                <div key={label}>
-                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
-                                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 px-3 divide-y divide-emerald-50">
-                                    {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <ArrowDownLeft className="h-3.5 w-3.5 text-emerald-500" />
+                              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">CC Income · {ccIn.length}</p>
+                            </div>
+                            {ccIn.length === 0
+                              ? <p className="text-xs text-slate-400 py-3 text-center">No income via CC</p>
+                              : <div className="space-y-4">{ccInGroups.map(({label,txns}) => (
+                                  <div key={label}>
+                                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
+                                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 px-3 divide-y divide-emerald-50">
+                                      {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}</div>
-                          }
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <ArrowUpRight className="h-3.5 w-3.5 text-violet-500" />
-                            <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest">CC Charges · {ccOut.length}</p>
+                                ))}</div>
+                            }
                           </div>
-                          {ccOut.length === 0
-                            ? <p className="text-xs text-slate-400 py-3 text-center">No charges yet</p>
-                            : <div className="space-y-4">{ccOutGroups.map(({label,txns}) => (
-                                <div key={label}>
-                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
-                                  <div className="rounded-xl border border-violet-100 bg-violet-50/30 px-3 divide-y divide-violet-50">
-                                    {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <ArrowUpRight className="h-3.5 w-3.5 text-violet-500" />
+                              <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest">CC Charges · {ccOut.length}</p>
+                            </div>
+                            {ccOut.length === 0
+                              ? <p className="text-xs text-slate-400 py-3 text-center">No charges yet</p>
+                              : <div className="space-y-4">{ccOutGroups.map(({label,txns}) => (
+                                  <div key={label}>
+                                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
+                                    <div className="rounded-xl border border-violet-100 bg-violet-50/30 px-3 divide-y divide-violet-50">
+                                      {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}</div>
-                          }
+                                ))}</div>
+                            }
+                          </div>
                         </div>
+
+                        {/* CC Payments (transfers from bank/cash → CC) */}
+                        {ccPayments.length > 0 && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <ArrowLeftRight className="h-3.5 w-3.5 text-teal-500" />
+                              <p className="text-[10px] font-bold text-teal-600 uppercase tracking-widest">CC Payments · {ccPayments.length}</p>
+                              <span className="text-[9px] text-slate-400">paid from bank / cash</span>
+                            </div>
+                            <div className="space-y-4">{ccPaymentGroups.map(({label,txns}) => (
+                              <div key={label}>
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">{label}</p>
+                                <div className="rounded-xl border border-teal-200 bg-teal-50/30 px-3 divide-y divide-teal-100">
+                                  {txns.map(t => <TransactionRow key={t.id} txn={t} onUpdated={fetchData} accounts={accounts} categories={categories} departments={departments} />)}
+                                </div>
+                              </div>
+                            ))}</div>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
