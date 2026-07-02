@@ -138,15 +138,15 @@ export function AIQuickAdd({ accounts, categories, departments, defaultDepartmen
 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) handleReset(); }}>
-      <DialogTrigger render={<Button size="sm" className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white border-0 shadow-sm" />}>
+      <DialogTrigger render={<Button size="sm" className="bg-gradient-to-r from-orange-600 to-red-700 hover:from-orange-700 hover:to-red-800 text-white border-0 shadow-sm" />}>
         <Sparkles className="h-3.5 w-3.5 mr-1.5" /> AI Add
       </DialogTrigger>
 
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <div className="p-1 rounded-lg bg-violet-100">
-              <Sparkles className="h-4 w-4 text-violet-600" />
+            <div className="p-1 rounded-lg bg-orange-100">
+              <Sparkles className="h-4 w-4 text-orange-700" />
             </div>
             AI Quick Add
           </DialogTitle>
@@ -171,7 +171,7 @@ export function AIQuickAdd({ accounts, categories, departments, defaultDepartmen
                 <Button
                   onClick={handleParse}
                   disabled={parsing || !text.trim()}
-                  className="shrink-0 bg-violet-500 hover:bg-violet-600 text-white"
+                  className="shrink-0 bg-orange-600 hover:bg-orange-700 text-white"
                 >
                   {parsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 </Button>
@@ -195,9 +195,9 @@ export function AIQuickAdd({ accounts, categories, departments, defaultDepartmen
 
           {/* Parsing state */}
           {parsing && (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-violet-50 border border-violet-200">
-              <Loader2 className="h-4 w-4 text-violet-500 animate-spin shrink-0" />
-              <p className="text-sm text-violet-700">AI is reading your transaction…</p>
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-orange-50 border border-orange-200">
+              <Loader2 className="h-4 w-4 text-orange-600 animate-spin shrink-0" />
+              <p className="text-sm text-orange-700">AI is reading your transaction…</p>
             </div>
           )}
 

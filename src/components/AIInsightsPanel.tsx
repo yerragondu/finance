@@ -74,17 +74,17 @@ export function AIInsightsPanel({ transactions, accounts, owings, handLoans, rec
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="p-1 rounded-lg bg-violet-100">
-            <Sparkles className="h-3.5 w-3.5 text-violet-600" />
+          <div className="p-1 rounded-lg bg-orange-100">
+            <Sparkles className="h-3.5 w-3.5 text-orange-700" />
           </div>
-          <h2 className="text-xs font-semibold text-violet-700 uppercase tracking-widest">AI Insights</h2>
+          <h2 className="text-xs font-semibold text-orange-700 uppercase tracking-widest">AI Insights</h2>
         </div>
         <Button
           size="sm"
           variant="ghost"
           onClick={fetchInsights}
           disabled={loading}
-          className="h-7 text-xs text-violet-600 hover:text-violet-800 hover:bg-violet-50"
+          className="h-7 text-xs text-orange-700 hover:text-orange-900 hover:bg-orange-50"
         >
           {loading
             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -104,14 +104,14 @@ export function AIInsightsPanel({ transactions, accounts, owings, handLoans, rec
 
       {!hasLoaded && !loading && !error && (
         <div className="py-6 text-center space-y-2">
-          <div className="p-3 rounded-full bg-violet-50 w-fit mx-auto">
-            <Sparkles className="h-6 w-6 text-violet-400" />
+          <div className="p-3 rounded-full bg-orange-50 w-fit mx-auto">
+            <Sparkles className="h-6 w-6 text-orange-500" />
           </div>
           <p className="text-sm text-[#9B9088]">AI can analyze your spending and give smart insights</p>
           <Button
             size="sm"
             onClick={fetchInsights}
-            className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white border-0"
+            className="bg-gradient-to-r from-orange-600 to-red-700 hover:from-orange-700 hover:to-red-800 text-white border-0"
           >
             <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Generate Insights
           </Button>
@@ -120,7 +120,7 @@ export function AIInsightsPanel({ transactions, accounts, owings, handLoans, rec
 
       {loading && (
         <div className="py-6 flex flex-col items-center gap-2">
-          <Loader2 className="h-6 w-6 text-violet-500 animate-spin" />
+          <Loader2 className="h-6 w-6 text-orange-600 animate-spin" />
           <p className="text-xs text-[#9B9088]">Analyzing your finances…</p>
         </div>
       )}

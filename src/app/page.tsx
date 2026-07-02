@@ -77,7 +77,7 @@ export default function Dashboard() {
   const [expectedIncomes, setExpectedIncomes] = useState<ExpectedIncome[]>([]);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [departments, setDepartments] = useState<Dept[]>([]);
-  const [activeDept, setActiveDept] = useState("ALL");
+  const [activeDept, setActiveDept] = useState("");
   const [selectedCard, setSelectedCard] = useState<"banks" | "creditcards" | "loans" | "borrowed" | "lent">("banks");
   const [loading, setLoading] = useState(true);
 
@@ -93,9 +93,8 @@ export default function Dashboard() {
   }, []);
 
   const fetchData = useCallback(async () => {
-    const deptParam = activeDept !== "ALL" ? `?department=${activeDept}` : "";
-    const sep = deptParam ? "&" : "?";
-    const loanParam = activeDept !== "ALL" ? `?department=${activeDept}` : "";
+    const deptParam = activeDept ? `?department=${activeDept}` : "";
+    const loanParam = deptParam;
 
     const [accs, allTxns, ows, cats, loans, bills, expected] = await Promise.all([
       fetch(`/api/accounts${deptParam}`).then((r) => r.json()),
@@ -119,6 +118,9 @@ export default function Dashboard() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchDepartments(); }, [fetchDepartments]);
+  useEffect(() => {
+    if (!activeDept && departments.length > 0) setActiveDept(departments[0].value);
+  }, [departments, activeDept]);
 
   async function handleAddDept() {
     if (!newDeptName.trim()) return;
@@ -139,8 +141,6 @@ export default function Dashboard() {
     setTimeout(() => deptInputRef.current?.focus(), 50);
   }
 
-  const ALL_DEPTS = [{ value: "ALL", label: "All" }, ...departments];
-
   // Summary stats
   const liquidTypes = ["BANK", "CASH"];
   const debtAccounts = accounts.filter((a) => ["DEBT", "LOAN"].includes(a.type));
@@ -149,7 +149,8 @@ export default function Dashboard() {
   const totalDebtUSD = debtAccounts.filter(a => a.currency === "USD").reduce((s, a) => s + a.balance, 0);
   const totalDebtINR = debtAccounts.filter(a => a.currency === "INR").reduce((s, a) => s + a.balance, 0);
   const totalDebt = totalDebtUSD + totalDebtINR / 84; // unified scalar for red-flag logic
-  const pendingPaybacks = (activeDept === "ALL" ? allTransactions : allTransactions.filter(t => t.department === activeDept)).filter((t) => t.paybackExpected && !t.paidBack);
+  const pendingPaybacks = allTransactions.filter(t => t.department === activeDept).filter((t) => t.paybackExpected && !t.paidBack)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   // Per-card calculations
   const bankCashAccounts = accounts.filter(a => ["BANK","CASH"].includes(a.type));
@@ -188,22 +189,20 @@ export default function Dashboard() {
   );
 
   // Dept-scoped transactions for display (filter from allTransactions client-side)
-  const deptTransactions = activeDept === "ALL"
-    ? allTransactions
-    : allTransactions.filter(t => t.department === activeDept);
+  const deptTransactions = allTransactions.filter(t => t.department === activeDept);
 
   // Cross-dept: txns created in OTHER dept but using THIS dept's accounts
   const deptAccountIds = new Set(accounts.map(a => a.id));
-  const crossDeptTxns = activeDept === "ALL" ? [] : allTransactions.filter(t =>
+  const crossDeptTxns = allTransactions.filter(t =>
     t.department !== activeDept &&
     ((t.fromAccount?.id && deptAccountIds.has(t.fromAccount.id)) ||
      (t.toAccount?.id   && deptAccountIds.has(t.toAccount.id)))
   );
   // Set for O(1) cross-dept lookup when rendering
   const crossDeptSet = new Set(crossDeptTxns.map(t => t.id));
-  // Merged display list: own txns + cross-dept txns, sorted by date
+  // Merged display list: own txns + cross-dept txns, sorted latest-to-oldest
   const allDeptDisplay = [...deptTransactions, ...crossDeptTxns].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
 
   // Totals for current dept
@@ -238,25 +237,25 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="min-h-screen" style={{ background: "linear-gradient(160deg, #EEEEFF 0%, #F3F4FF 40%, #EFF6FF 100%)" }}>
+    <div className="min-h-screen" style={{ background: "linear-gradient(160deg, #FBF8F2 0%, #F6F1E6 45%, #F8F3EA 100%)" }}>
 
       {/* ══ HEADER ══ */}
-      <header className="px-6 h-14 flex items-center justify-between sticky top-0 z-10 shadow-lg" style={{ background: "linear-gradient(135deg, #1a1a3e 0%, #12122e 100%)" }}>
+      <header className="px-6 h-14 flex items-center justify-between sticky top-0 z-10 shadow-lg" style={{ background: "linear-gradient(135deg, #1C1815 0%, #0F0C0A 100%)" }}>
         <div className="flex items-center gap-4">
           <h1 className="text-[15px] font-bold tracking-tight shrink-0 text-white">
-            Finance<span className="text-[#818CF8]">OS</span>
+            Finance<span className="text-[#E8734A]">OS</span>
           </h1>
 
           {/* Dept tabs */}
           <div className="hidden sm:flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: "rgba(255,255,255,0.06)" }}>
-            {ALL_DEPTS.map((d) => (
+            {departments.map((d) => (
               <button key={d.value} onClick={() => setActiveDept(d.value)}
                 className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
                   activeDept === d.value
                     ? "text-white shadow-lg"
-                    : "text-[#8B8FB8] hover:text-white"
+                    : "text-[#A8A096] hover:text-white"
                 }`}
-                style={activeDept === d.value ? { background: "linear-gradient(135deg, #6366F1, #8B5CF6)" } : {}}>
+                style={activeDept === d.value ? { background: "linear-gradient(135deg, #C2410C, #EA580C)" } : {}}>
                 {d.label}
               </button>
             ))}
@@ -272,20 +271,20 @@ export default function Dashboard() {
                     if (e.key === "Enter") { e.preventDefault(); handleAddDept(); }
                     if (e.key === "Escape") { setAddingDept(false); setNewDeptName(""); }
                   }}
-                  className="px-2 py-0.5 text-xs rounded-md border border-[#6366F1] w-24 focus:outline-none focus:ring-1 focus:ring-[#6366F1] bg-[#0F172A] text-white placeholder:text-[#475569]"
+                  className="px-2 py-0.5 text-xs rounded-md border border-[#C2410C] w-24 focus:outline-none focus:ring-1 focus:ring-[#C2410C] bg-[#171310] text-white placeholder:text-[#6B6155]"
                 />
                 <button onClick={handleAddDept} disabled={savingDept || !newDeptName.trim()}
-                  className="p-0.5 text-[#818CF8] hover:text-white disabled:opacity-40">
+                  className="p-0.5 text-[#E8734A] hover:text-white disabled:opacity-40">
                   <Check className="h-3 w-3" />
                 </button>
                 <button onClick={() => { setAddingDept(false); setNewDeptName(""); }}
-                  className="p-0.5 text-[#64748B] hover:text-white">
+                  className="p-0.5 text-[#8A8175] hover:text-white">
                   <X className="h-3 w-3" />
                 </button>
               </div>
             ) : (
               <button onClick={openAddDept}
-                className="ml-0.5 px-1.5 py-1 rounded-md text-[#64748B] hover:text-white transition-all"
+                className="ml-0.5 px-1.5 py-1 rounded-md text-[#8A8175] hover:text-white transition-all"
                 title="Add department">
                 <Plus className="h-3 w-3" />
               </button>
@@ -295,14 +294,14 @@ export default function Dashboard() {
 
         <div className="flex items-center gap-2">
           <a href="/api/export" download
-            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#334155] text-[#94A3B8] hover:bg-[#334155] hover:text-white transition-colors">
+            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#3A332C] text-[#B8AFA0] hover:bg-[#3A332C] hover:text-white transition-colors">
             <Download className="h-3.5 w-3.5" /> Export
           </a>
           <AddTransactionDialog
             accounts={accounts}
             departments={departments}
             onCreated={fetchData}
-            defaultDepartment={activeDept !== "ALL" ? activeDept : "SELF"}
+            defaultDepartment={activeDept || "SELF"}
           />
           <AddAccountDialog onCreated={fetchData} departments={departments} />
         </div>
@@ -311,11 +310,11 @@ export default function Dashboard() {
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-5">
 
         {/* Mobile dept selector */}
-        <div className="sm:hidden flex gap-1 bg-[#1E293B] p-1 rounded-xl shadow-sm overflow-x-auto mb-4">
-          {ALL_DEPTS.map((d) => (
+        <div className="sm:hidden flex gap-1 bg-[#1C1815] p-1 rounded-xl shadow-sm overflow-x-auto mb-4">
+          {departments.map((d) => (
             <button key={d.value} onClick={() => setActiveDept(d.value)}
               className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all min-w-[3rem] ${
-                activeDept === d.value ? "bg-[#6366F1] text-white font-semibold" : "text-[#94A3B8]"
+                activeDept === d.value ? "bg-[#C2410C] text-white font-semibold" : "text-[#A8A096]"
               }`}>{d.label}</button>
           ))}
         </div>
@@ -407,7 +406,7 @@ export default function Dashboard() {
             </DashCard>
 
             {/* ── Donut Chart — spans rows 1 & 2 ── */}
-            <div className="row-span-2 bg-white rounded-2xl border border-sky-100 shadow-md p-4 flex flex-col min-h-0">
+            <div className="row-span-2 bg-white rounded-2xl border border-[#EDE6D8] shadow-md p-4 flex flex-col min-h-0">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Spending Summary</p>
               {deptTransactions.length > 0
                 ? <DonutChart transactions={deptTransactions} />
@@ -416,7 +415,7 @@ export default function Dashboard() {
             </div>
 
             {/* ── Detail Panel — col-span-5 ── */}
-            <div className="col-span-5 bg-white rounded-2xl border border-sky-100 shadow-md overflow-auto" style={{ maxHeight: "calc(100vh - 220px)", minHeight: "480px" }}>
+            <div className="col-span-5 bg-white rounded-2xl border border-[#EDE6D8] shadow-md overflow-auto" style={{ maxHeight: "calc(100vh - 220px)", minHeight: "480px" }}>
 
               {/* Banks & Cash */}
               {selectedCard === "banks" && (
@@ -712,16 +711,14 @@ function DashCard({ title, icon, color, bg, border, active, onClick, sub, childr
 }) {
   return (
     <button onClick={onClick}
-      className="text-left rounded-2xl border p-4 transition-all duration-200 cursor-pointer w-full group"
+      className="text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer w-full group"
       style={{
-        background: active
-          ? `linear-gradient(145deg, ${bg} 0%, #fff 60%)`
-          : "rgba(255,255,255,0.85)",
+        background: active ? bg : "#FEFDFB",
         borderColor: active ? color : border,
+        borderWidth: active ? "1.5px" : "1px",
         boxShadow: active
-          ? `0 0 0 2px ${color}44, 0 8px 24px ${color}18`
-          : "0 2px 8px rgba(99,102,241,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-        backdropFilter: "blur(8px)",
+          ? `0 4px 12px ${color}14`
+          : "0 1px 2px rgba(28,24,21,0.04)",
       }}>
       <div className="flex items-center justify-between mb-3">
         <p className="text-[9px] font-bold uppercase tracking-widest leading-tight" style={{ color: active ? color : "#94A3B8" }}>{title}</p>
