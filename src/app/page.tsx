@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AccountTypeGroup } from "@/components/AccountTypeGroup";
 import { AddAccountDialog } from "@/components/AddAccountDialog";
 import { AddTransactionDialog } from "@/components/AddTransactionDialog";
+import { QuickLogBar } from "@/components/QuickLogBar";
 import { TransactionRow } from "@/components/TransactionRow";
 import { OwingPanel } from "@/components/OwingPanel";
 import { HandLoanPanel } from "@/components/HandLoanPanel";
@@ -308,6 +309,17 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-5">
+
+        {/* Quick log — one line in, transaction saved, no dialog */}
+        {activeDept && (
+          <QuickLogBar
+            accounts={accounts}
+            categories={categories}
+            departments={departments}
+            defaultDepartment={activeDept}
+            onCreated={fetchData}
+          />
+        )}
 
         {/* Mobile dept selector */}
         <div className="sm:hidden flex gap-1 bg-[#1C1815] p-1 rounded-xl shadow-sm overflow-x-auto mb-4">

@@ -56,6 +56,40 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  await prisma.transaction.delete({ where: { id } });
+  const txn = await prisma.transaction.findUnique({ where: { id } });
+  if (!txn) return Response.json({ ok: true });
+
+  await prisma.$transaction(async (tx) => {
+    // Reverse the balance effects this transaction had, then delete it.
+    if (txn.type === "EXPENSE" && txn.fromAccountId) {
+      await tx.account.update({
+        where: { id: txn.fromAccountId },
+        data: { balance: { increment: txn.amount + txn.fee } },
+      });
+    }
+    if (txn.type === "INCOME" && txn.toAccountId) {
+      await tx.account.update({
+        where: { id: txn.toAccountId },
+        data: { balance: { decrement: txn.amount } },
+      });
+    }
+    if (txn.type === "TRANSFER") {
+      if (txn.fromAccountId) {
+        await tx.account.update({
+          where: { id: txn.fromAccountId },
+          data: { balance: { increment: txn.amount + txn.fee } },
+        });
+      }
+      if (txn.toAccountId) {
+        const received = txn.exchangeRate ? txn.amount * txn.exchangeRate : txn.amount;
+        await tx.account.update({
+          where: { id: txn.toAccountId },
+          data: { balance: { decrement: received } },
+        });
+      }
+    }
+    await tx.transaction.delete({ where: { id } });
+  });
+
   return Response.json({ ok: true });
 }
